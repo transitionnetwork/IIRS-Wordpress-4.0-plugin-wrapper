@@ -1,5 +1,5 @@
 <?php
-/** NOTE: this template file is NOT being used. the add_filter() call is commented out in class.iirs */
+/** NOTE: this template file is NOT being used. the add_filter() call is commented out in class-iirs */
 
 /**
  * The Template for displaying all single posts
