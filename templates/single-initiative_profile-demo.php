@@ -1,12 +1,11 @@
 <?php
-/** NOTE: this template file is NOT being used. the add_filter() call is commented out in class-iirs */
-
 /**
- * The Template for displaying all single posts
+ * Rename this template file to single-initiative_profile.php for it to take effect
  *
- * @package WordPress
- * @subpackage Twenty_Fourteen
- * @since Twenty Fourteen 1.0
+ * The Template for displaying all single initiaitve_profile
+ *
+ * @package IIRS
+ * @since IIRS 1.0
  */
 
 get_header(); ?>

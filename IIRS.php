@@ -33,7 +33,9 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301, USA.
 defined( 'ABSPATH' ) or die( "No script kiddies please!" );
 
 define( 'IIRS_PLUGIN_NAME', 'IIRS' );
-define( 'IIRS_VERSION', '1.0.0' );
+define( 'IIRS_VERSION', '1.0 beta' );
+define( 'IIRS_EMAIL_TEAM_EMAIL', 'edmitchell@transitionnetwork.org' );
+define( 'IIRS_EMAIL_TEAM_LINK', '<a href="mailto:' . IIRS_EMAIL_TEAM_EMAIL . '">' . IIRS_EMAIL_TEAM_EMAIL . '</a>' );
 define( 'IIRS__MINIMUM_WP_VERSION', '1.0' );
 define( 'IIRS__PLUGIN_URL', plugin_dir_url( __FILE__ ) );
 define( 'IIRS__PLUGIN_DIR', plugin_dir_path( __FILE__ ) );

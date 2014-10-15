@@ -1,1 +1,12 @@
-.entry-meta {display:none;}
+/* we want to hide the main header meta
+ * some pages show valid meta
+ * we create a standard post type with fake_page
+ * so this won't affect initiative_profile display
+ * e.g. /IIRS/list
+ */
+.post .entry-meta {
+  display:none;
+}
+.post .entry-content .entry-meta {
+  display:block;
+}
