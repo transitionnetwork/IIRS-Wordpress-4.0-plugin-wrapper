@@ -11,6 +11,7 @@ IIRS allows you to comunicate with Transition Towns locally and globally.
 == Description ==
 
 IIRS allows you to comunicate with Transition Towns locally and globally.
+See the README and TODO and documentation in the IIRS_common directory
 
 Major new features in IIRS 1.0.0 include:
 

@@ -5,6 +5,22 @@ $WPML_st_active       = IIRS::plugin_active( 'wpml-string-translation/plugin.php
 $WPML_ready           = ( $WPML_main_active && $WPML_st_active );
 $WPML_disabled        = ( $WPML_ready ? '' : ' class="IIRS_0_disabled" disabled="1" onclick="alert(\'WPML required\');return false;" ' );
 $WPML_disabled_colour = ( $WPML_ready ? '' : ' class="IIRS_0_disabled" ' );
+
+// -------------------------------------------------- custom template detection
+global $post;
+$post = new stdClass();
+$post->ID         = -42;
+$post->post_type  = IIRS_0_CONTENT_TYPE;
+$custom_templates = array();
+// custom single.php
+$single_template_name = apply_filters( 'template_include', get_single_template() );
+if ( FALSE !== strstr( $single_template_name, IIRS_0_CONTENT_TYPE ) ) {
+  array_push( $custom_templates, $single_template_name );
+}
+// custom content.php
+if ( $theme_custom_content_template = locate_template( array( 'content-' . IIRS_0_CONTENT_TYPE . '.php' ) ) ) {
+  array_push( $custom_templates, $theme_custom_content_template );
+}
 ?>
 
 <div class="wrap">
@@ -32,7 +48,7 @@ $WPML_disabled_colour = ( $WPML_ready ? '' : ' class="IIRS_0_disabled" ' );
     <?php settings_fields( IIRS_PLUGIN_NAME ); ?>
     <?php do_settings_sections( IIRS_PLUGIN_NAME ); ?>
 
-    <?php include( 'documentation/index.php' ); ?>
+    <?php include( 'IIRS_common/documentation/index.php' ); ?>
 
     <?php if ( ! IIRS_0_language_is_supported() ) { ?>
       <a name="translation">&nbsp;</a>
@@ -77,10 +93,29 @@ $WPML_disabled_colour = ( $WPML_ready ? '' : ' class="IIRS_0_disabled" ' );
     </ul>
 
     <h3>theme templates</h3>
-    <p>
-      <a href="/wp-content/plugins/IIRS/templates/" target="_blank">Example templates</a> are included with this plugin.
-      Copy them in to the theme templates directory and it will take over display.
-    </p>
+    <?php if ( count( $custom_templates ) ) { ?>
+      <p>
+        IIRS has detected custom templates in your current theme (<?php print( get_template() ); ?>).
+        <?php if ( $theme_custom_content_template ) { ?>
+          <br />If you want the <a href="#">content-initiative_profile.php</a> override to work you need to call the correct
+          get_template_part( 'content', <b>'initiative_profile'</b> ); in the <a href="#">single-initiative_profile.php</a>.
+        <?php } ?>
+      </p>
+    <?php
+      print( '<ul>' );
+      foreach ( $custom_templates as $template_name ) {
+        print( "<li><a href=\"#\">$template_name</a></li>" );
+      }
+      print( '</ul>' );
+    } else { ?>
+      <p>
+        If you would like to make your own Initiative display templates then
+        copy the <a target="_blank" href="/wp-content/themes/<?php print( get_template() ); ?>/">active theme (<?php print( get_template() ); ?>)</a> single.php to
+        <a href="#">single-initiative_profile.php</a> in the same directory and it will take over control of display.
+        You can also additionally copy the themes content.php to <a href="#">content-initiative_profile.php</a> for specific content override only.
+        When you have successfully copied the file(s), this settings page will auto-detect them and show your custom template(s) for you.
+      </p>
+    <?php } ?>
 
     <h3>options <i>(currently disabled in this version)</i></h3>
     <p>
@@ -88,51 +123,58 @@ $WPML_disabled_colour = ( $WPML_ready ? '' : ' class="IIRS_0_disabled" ' );
     </p>
     <table id="form-table-1" class="form-table">
       <tr valign="top">
-        <th scope="row">offer_buy_domains</th>
-        <td><input type="checkbox" disabled="1" name="new_option_name" value="<?php echo esc_attr( get_option('offer_buy_domains') ); ?>" /></td>
+        <td><input type="checkbox" name="new_option_name" value="<?php echo esc_attr( get_option('offer_buy_domains') ); ?>" /></td>
+        <th scope="row"><label>offer_buy_domains</label></th>
       </tr>
       <tr valign="top">
-        <th scope="row">add_projects</th>
-        <td><input type="checkbox" disabled="1" name="new_option_name" value="<?php echo esc_attr( get_option('add_projects') ); ?>" /></td>
+        <td><input type="checkbox" name="new_option_name" value="<?php echo esc_attr( get_option('add_projects') ); ?>" /></td>
+        <th scope="row"><label>add_projects</label></th>
       </tr>
       <tr valign="top">
-        <th scope="row">advanced_settings</th>
-        <td><input type="checkbox" disabled="1" name="new_option_name" value="<?php echo esc_attr( get_option('advanced_settings') ); ?>" /></td>
+        <td><input type="checkbox" name="new_option_name" value="<?php echo esc_attr( get_option('advanced_settings') ); ?>" /></td>
+        <th scope="row"><label>advanced_settings</label></th>
       </tr>
       <tr valign="top">
-        <th scope="row">image_entry</th>
-        <td><input type="checkbox" disabled="1" name="new_option_name" value="<?php echo esc_attr( get_option('image_entry') ); ?>" /></td>
+        <td><input type="checkbox" name="new_option_name" value="<?php echo esc_attr( get_option('image_entry') ); ?>" /></td>
+        <th scope="row"><label>image_entry</label></th>
       </tr>
       <tr valign="top">
-        <th scope="row">lang_code</th>
-        <td><input type="checkbox" disabled="1" name="new_option_name" value="<?php echo esc_attr( get_option('lang_code') ); ?>" /></td>
+        <td><input type="checkbox" name="new_option_name" value="<?php echo esc_attr( get_option('lang_code') ); ?>" /></td>
+        <th scope="row"><label>lang_code</label></th>
       </tr>
     </table>
 
     <table id="form-table-2" class="form-table">
       <tr valign="top">
-        <th scope="row">server_country</th>
-        <td><input type="checkbox" disabled="1" name="new_option_name" value="<?php echo esc_attr( get_option('server_country') ); ?>" /></td>
+        <td><input type="checkbox" name="new_option_name" value="<?php echo esc_attr( get_option('server_country') ); ?>" /></td>
+        <th scope="row"><label>server_country</label></th>
       </tr>
       <tr valign="top">
-        <th scope="row">override_TI_display</th>
-        <td><input type="checkbox" disabled="1" name="new_option_name" value="<?php echo esc_attr( get_option('override_TI_display') ); ?>" /></td>
+        <td><input type="checkbox" name="new_option_name" value="<?php echo esc_attr( get_option('override_TI_display') ); ?>" /></td>
+        <th scope="row"><label>override_TI_display</label></th>
       </tr>
       <tr valign="top">
-        <th scope="row">override_TI_editing</th>
-        <td><input type="checkbox" disabled="1" name="new_option_name" value="<?php echo esc_attr( get_option('override_TI_editing') ); ?>" /></td>
+        <td><input type="checkbox" name="new_option_name" value="<?php echo esc_attr( get_option('override_TI_editing') ); ?>" /></td>
+        <th scope="row"><label>override_TI_editing</label></th>
       </tr>
       <tr valign="top">
-        <th scope="row">override_TI_content_template</th>
-        <td><input type="checkbox" disabled="1" name="new_option_name" value="<?php echo esc_attr( get_option('override_TI_content_template') ); ?>" /></td>
+        <td><input type="checkbox" name="new_option_name" value="<?php echo esc_attr( get_option('override_TI_content_template') ); ?>" /></td>
+        <th scope="row"><label>override_TI_content_template</label></th>
       </tr>
       <tr valign="top">
-        <th scope="row">initiatives_visibility</th>
-        <td><input type="checkbox" disabled="1" name="new_option_name" value="<?php echo esc_attr( get_option('initiatives_visibility') ); ?>" /></td>
+        <td><input type="checkbox" name="new_option_name" value="<?php echo esc_attr( get_option('initiatives_visibility') ); ?>" /></td>
+        <th scope="row"><label>initiatives_visibility</label></th>
       </tr>
       <tr valign="top">
-        <th scope="row">language_selector</th>
-        <td><input type="checkbox" disabled="1" name="new_option_name" value="<?php echo esc_attr( get_option('language_selector') ); ?>" /></td>
+        <td><input type="checkbox" name="new_option_name" value="<?php echo esc_attr( get_option('language_selector') ); ?>" /></td>
+        <th scope="row"><label>language_selector</label></th>
+      </tr>
+    </table>
+
+    <table id="form-table-2" class="form-table">
+      <tr valign="top">
+        <th scope="row"><label>thankyou_for_registering_url</label></th>
+        <td><input name="new_option_name" value="<?php echo esc_attr( get_option('thankyou_for_registering_url') ); ?>" /></td>
       </tr>
     </table>
 

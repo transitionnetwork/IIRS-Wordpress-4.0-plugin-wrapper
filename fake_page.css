@@ -10,3 +10,8 @@
 .post .entry-content .entry-meta {
   display:block;
 }
+
+.mce-edit-area iframe {
+  border-left:1px solid #d7d7d7;
+  border-right:1px solid #d7d7d7;
+}

@@ -15,13 +15,18 @@ add_action( 'pre_get_posts',    array( IIRS_PLUGIN_NAME, 'pre_get_posts' ) );
 add_action( 'admin_menu',       array( IIRS_PLUGIN_NAME, 'admin_menu' ) );
 add_action( 'admin_init',       array( IIRS_PLUGIN_NAME, 'admin_init_option_settings' ) );
 // register_nav_menu( 'iirs', IIRS_PLUGIN_NAME );
-add_action( 'user_register',    array( IIRS_PLUGIN_NAME, 'user_register' ) );
+// user_register is DISABLED because we do not want to force email sending
+// the admin might add a user with the IIRS_0_USER_ROLE_NAME manually...
+// add_action( 'user_register',    array( IIRS_PLUGIN_NAME, 'send_user_registration_email' ) );
+
 // add_action( 'after_setup_theme',array( IIRS_PLUGIN_NAME, 'after_setup_theme' ) );
 // using the content filter, not a full separate template here
 // however, an example template is included for copying in to a theme
-add_filter( 'template_include', array( IIRS_PLUGIN_NAME, 'template_inlcude' ) );
+add_filter( 'template_include', array( IIRS_PLUGIN_NAME, 'template_include' ) );
+// include the ability to get_posts by title
+// to check for duplicates
+add_filter( 'posts_where',      array( IIRS_PLUGIN_NAME, 'posts_where' ), 10, 2 );
 
-// not going to override display of TIs for the main framework anymore
 // the framework itself can display things
 // we provide standard platform depenedent templates for WordPress and Drupal
 // and recommend standard plugins, e.g. Drupal Panels, or Wordpress twig post_formats
@@ -123,16 +128,141 @@ class IIRS {
     return __( $string_to_translate, IIRS_PLUGIN_NAME );
   }
 
-  public static function user_register( $user_id ) {
-    //send a password details email to the new registered user
-    //only for users in the IIRS_0_USER_ROLE_NAME role
-    $user = get_userdata( $user_id );
-    if ( $user && in_array( IIRS_0_USER_ROLE_NAME, (array) $user->roles ) ) {
-      $email = $user->data->user_email;
-      if ( FALSE !== strstr( $email, 'annesley' )) $email = 'annesley_newholm@yahoo.it';
-      //var_dump($email); exit(0);
-      wp_mail( $email, 'your new WordPress account', sprintf( 'username: %s password: %s', $user->data->user_login, $user->data->user_pass ));
+  public static function setting( $setting ) {
+    // TODO: need to replace this IIRS_0_setting() with get_option() when the defauls are registered
+    switch ( $setting ) {
+      case 'offer_buy_domains': return false;
+      case 'add_projects': return false;
+      case 'advanced_settings': return false;
+      case 'image_entry': return false;
+      case 'lang_code': return 'en';
+      case 'server_country': return NULL;
+      case 'override_TI_display': return false;
+      case 'override_TI_editing': return true;
+      case 'override_TI_content_template': return true;
+      case 'language_selector': return false;
+      case 'thankyou_for_registering_url': return null;
+      case 'region_bias': return null;
+      default: return false;
     }
+  }
+
+  public static function http_request( $url, $post_array, $timeout = 2.0, $ua = null ) {
+    global $wp_version;
+    $body = null;
+
+    $args = array(
+      'timeout'     => $timeout,
+      'method'      => ( $post_array ? 'POST' : 'GET' ),
+      'redirection' => 0,
+      'httpversion' => '1.0',
+      'user-agent'  => ( $ua ? $ua : 'WordPress/' . $wp_version . '; ' . get_bloginfo( 'url' ) ),
+      'blocking'    => true,
+      'headers'     => array(),
+      'cookies'     => array(),
+      'body'        => $post_array,
+      'compress'    => false,
+      'decompress'  => true,
+      'sslverify'   => true,
+      'stream'      => false,
+      'filename'    => null
+    );
+
+    $response = ( $post_array ? wp_remote_post( $url, $args ) : wp_remote_get( $url, $args ) );
+    if ( is_wp_error( $response ) ) {
+      $body = new IIRS_Error(IIRS_HTTP_FAILED, "Cannot communicate with Transition Registration servers. Sorry! Please try again tomorrow", $response->get_error_message(), IIRS_MESSAGE_EXTERNAL_SYSTEM_ERROR );
+    } else {
+      $body = wp_remote_retrieve_body( $response );
+      // regard empty response as an error
+      // because wp_remote_*() do not always report the error correctly it seems
+      if ( $body === '' ) $body = new IIRS_Error(IIRS_HTTP_FAILED, "Cannot communicate with Transition Registration servers. Sorry! Please try again tomorrow", 'Blank response', IIRS_MESSAGE_EXTERNAL_SYSTEM_ERROR );
+    }
+
+    return $body;
+  }
+
+  public static function set_message( $mess_no, $message, $message_detail = null, $level = IIRS_MESSAGE_USER_INFORMATION, $user_action = null, $args = null ) {
+    // SECURITY: $message is text, NOT HTML. it will be pushed through IIRS_0_escape_for_HTML_text() -> htmlentities()
+    // the caller should NOT escape the input
+    // however, the caller SHOULD translate the input
+    global $IIRS_widget_mode;
+
+    $html = IIRS_0_message_html( $mess_no, $message, $message_detail, $level, $user_action, $args );
+    if ( isset( $IIRS_widget_mode ) && true === $IIRS_widget_mode ) {
+      // global $IIRS_widget_mode requires that the message is included in the HTML output
+      // because the user is viewing the message through HTML transported in the widget on a *different* website
+      // normal message display, that is through a plugin / module on *this* website can use the host framework function
+      // e.g. Drupal uses drupal_set_message() which *indirectly* queues the message for display (once)
+      IIRS_0_print_HTML( $html );
+    } else {
+      // TODO: actually Wordpress does not seem to have a drupal_set_message() function for the user front end?
+      // so we will pump the message out directly as well here until further investigation (TODO)
+      IIRS_0_print_HTML( $html );
+    }
+  }
+
+  public static function locale() {
+    return get_locale(); // e.g. en_EN
+  }
+
+  public static function available_languages() {
+    // Wordpress plugins have a language directory that contains MO language translation files
+    // one per language
+    // $language_filenames will have partial filenames like IIRS-en_EN in it
+    // we sanitize this to the language code, e.g. en_EN
+    // get_available_languages( ... ) is a Wordpress core function
+    // https://developer.wordpress.org/reference/functions/get_available_languages/
+    $language_filenames = get_available_languages( dirname( __FILE__ ) . '/languages' );
+    $language_codes     = array();
+    foreach ( $language_filenames as $filename ) {
+      array_push( $language_codes, substr( $filename, 5 ) );
+    }
+    return $language_codes;
+  }
+
+  public static function wp_mail_content_type() {
+    // used by send_email( ... ) below
+    return 'text/html';
+  }
+
+  public static function send_email( $email_address, $subject, $body, $add_headers = array() ) {
+    // HTML body always: the add_filter( ... ) does not seem to work so the headers are also used
+    // returns TRUE or an IIRS_Error
+    $ret = FALSE;
+
+    // testing email control system
+    // replace the next line with your own details if needed
+    // if it contains "annesley", send it to annesley
+    if ( FALSE !== strstr( $email_address, 'annesley' )) {
+      $email_address = 'annesley_newholm@yahoo.it';
+      IIRS_0_debug_print( "morphed email to $email_address because contains annesley" );
+    }
+
+    IIRS_0_debug_print( "wordpress sending email to [$email_address]" );
+    IIRS_0_debug_print( "  required php.ini settings:" );
+    IIRS_0_debug_print( "  SMTP:" . ini_get('SMTP') . "" );
+    IIRS_0_debug_print( "  smtp_port:" . ini_get('smtp_port') . ""  );
+
+    add_filter( 'wp_mail_content_type', array( IIRS_PLUGIN_NAME, 'wp_mail_content_type' ) );
+    // TODO: make From address configurable
+    // array_merge: this is a numeric key array so the 2 will be appended, not overwritten
+    // http://php.net/manual/en/function.array-merge.php
+    $all_headers = array_merge( array(
+      'From: "Parrot" <annesley@annesley.parrot.transitionnetwork.org>',
+      'Content-Type: text/html; charset=UTF-8',
+    ), $add_headers );
+    $wp_mail_result = wp_mail( $email_address, $subject, $body, $all_headers );
+    remove_filter( 'wp_mail_content_type', array( IIRS_PLUGIN_NAME, 'wp_mail_content_type' ) );
+
+    if ( is_wp_error( $wp_mail_result )) {
+      IIRS_0_debug_var_dump( $wp_mail_result );
+      $ret = new IIRS_error( IIRS_REGISTRATION_EMAIL_FAILED, "Failed to send you your registration details and password. Please contact us by email if you need to login.", $wp_mail_result->get_message(), IIRS_MESSAGE_SYSTEM_ERROR );
+    } else {
+      IIRS_0_debug_print( "no email errors reported" );
+      $ret = TRUE;
+    }
+
+    return $ret; // TRUE or IIRS_Error
   }
 
   public static function shortcode_iirs_registration( $atts ) {
@@ -155,46 +285,65 @@ class IIRS {
     if ( ! $page_stem ) $page_stem = "index.php";
     $page_extension = ( ! pathinfo( $page_stem, PATHINFO_EXTENSION ) ? '.php' : '' ); // pathinfo() PHP 4 >= 4.0.3, PHP 5
     $page_path      = "$widget_folder/$page_stem$page_extension";
+    $full_path      = IIRS__COMMON_DIR . "/$page_path";
 
-    // static JavaScript and CSS
-    // javascript: do not add popup.php because it will override the form submits and show the popups
-    // javascript: need to add all JS to every page here because each one is new
-    wp_enqueue_script( 'jquery' );
-    if ( file_exists( IIRS__PLUGIN_DIR . "/IIRS_common/$widget_folder/general_interaction.js" ))
-      wp_enqueue_script( 'IIRS_widget_folder_custom', plugins_url( "IIRS/IIRS_common/$widget_folder/general_interaction.js" ));
-    wp_enqueue_script( 'IIRS_general', plugins_url( 'IIRS/IIRS_common/general_interaction.js' ));
-    wp_enqueue_style(  'IIRS_general', plugins_url( 'IIRS/IIRS_common/general.css' ));
+    if ( file_exists( $full_path ) ) {
+      // static JavaScript and CSS
+      // javascript: do not add popup.php because it will override the form submits and show the popups
+      // javascript: need to add all JS to every page here because each one is new
+      wp_enqueue_script( 'jquery' );
+      if ( file_exists( IIRS__PLUGIN_DIR . "/IIRS_common/$widget_folder/general_interaction.js" ))
+        wp_enqueue_script( 'IIRS_widget_folder_custom', plugins_url( "IIRS/IIRS_common/$widget_folder/general_interaction.js" ));
+      wp_enqueue_script( 'IIRS_general', plugins_url( 'IIRS/IIRS_common/general_interaction.js' ));
+      wp_enqueue_style(  'IIRS_general', plugins_url( 'IIRS/IIRS_common/general.css' ));
 
-    // build page into the ob stream to trap the contents
-    $hide_errors = true;
-    if ($hide_errors) ob_start(); // ob_start() PHP 4, PHP 5
-    // PHP driven translations for js
-    if ( $hide_errors ) print( '<script type="text/javascript">' );
-    require_once( 'translations_js.php' );
-    require_once( 'global_js.php' );
-    if ( $hide_errors ) print( '</script>' );
-    // primary template
-    require_once( $page_path );
-    $content = ob_get_contents();
-    ob_end_clean();
+      // build page into the ob stream to trap the contents
+      $hide_errors = true;
+      if ($hide_errors) ob_start(); // ob_start() PHP 4, PHP 5
+      // PHP driven translations for js
+      if ( $hide_errors ) print( '<script type="text/javascript">' );
+      require_once( IIRS__COMMON_DIR . 'translations_js.php' );
+      require_once( IIRS__COMMON_DIR . 'global_js.php' );
+      if ( $hide_errors ) print( '</script>' );
+      // primary template
+      require_once( IIRS__COMMON_DIR . $page_path );
+      $content = ob_get_contents();
+      ob_end_clean();
+    } else {
+      $content = new IIRS_Error( IIRS_URL_404, 'File not found', 'File not found in IIRS_common', IIRS_MESSAGE_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION, array( '$page_path' => $page_path ) );
+    }
 
     return $content;
   }
 
-  public static function template_inlcude( $template ) {
+  public static function template_include( $template ) {
     /* we are using the_content filter by default
      * this template suggestion is included for the host to override
      * an example single-initiative_profile.php is included in templates
      */
     global $post;
 
-    // TODO: include a multi-summary template as well
-    if ( $post && is_single() && IIRS_0_CONTENT_TYPE == $post->post_type ) {
-      $template_name  = 'single-' . IIRS_0_CONTENT_TYPE . '.php';
-      $template_theme = locate_template( array( 'plugin_template/' . $template_name ));
-      if ( empty( $template_theme ) ) {
-        $template_iirs_plugin = IIRS__PLUGIN_DIR . "templates/$template_name";
-        if ( file_exists( $template_iirs_plugin ) ) $template = $template_iirs_plugin;
+    if ( $post && IIRS_0_CONTENT_TYPE == $post->post_type ) {
+      $custom_template_name = NULL;
+      $always_use_single    = TRUE;
+
+      // calculate desired template name
+      if ( $always_use_single || is_single() ) {
+        $custom_template_name = 'single-' . IIRS_0_CONTENT_TYPE . '.php';
+      }
+      // TODO: templates_include: 'archive-' . IIRS_0_CONTENT_TYPE . '.php';
+
+      if ( $custom_template_name ) {
+        // look for templates in the active theme
+        if ( $theme_custom_template = locate_template( array( $custom_template_name ) ) ) {
+          $template = $theme_custom_template;
+        } else {
+          // look for templates in the IIRS plugin (CURRENTLY_NOT_USED)
+          $template_iirs_plugin = IIRS__PLUGIN_DIR . "templates/$custom_template_name";
+          if ( file_exists( $template_iirs_plugin ) ) {
+            $template = $template_iirs_plugin;
+          }
+        }
       }
     }
 
@@ -426,27 +575,33 @@ class IIRS {
     self::$wp_category_id = wp_create_category( IIRS_0_POST_CATEGORY );
   }
 
-  public static function add_user( $name, $email, $requested_password, $phone ) {
+  public static function generate_password( $name = null ) {
+    return wp_generate_password();
+  }
+
+  public static function add_user( $name, $email, $pass, $phone = NULL ) {
     // adds the user, role, etc.
-    // $pass and $phone are optional
-    // a random password will be created and emailed if not included
-    // NULL return indicates failure
-    $new_user_id = NULL;
+    // returns the new user id or IIRS_Error
+    $new_user_id = FALSE;
 
     if ( username_exists( $name ) || email_exists( $email )) {
-      // name or email already exists, return NULL
+      $new_user_id = new IIRS_Error( IIRS_USER_ALREADY_REGISTERED, 'There is already a user with this email or username. Please try again.', 'User already exists', IIRS_MESSAGE_USER_WARNING );
     } else {
-      if ( $requested_password ) $password = $requested_password;
-      else                       $password = wp_generate_password();
-      $new_user_id = wp_create_user( $name, $password, $email );
-      if ( $new_user_id ) {
+      $new_user_id = wp_create_user( $name, $pass, $email );
+
+      if ( is_wp_error( $new_user_id ) ) {
+        $new_user_id = new IIRS_Error( IIRS_USER_ALREADY_REGISTERED, 'Could not create your user account because of a system error. Please try again tomorrow.', $new_user_id->get_error_message(), IIRS_MESSAGE_SYSTEM_ERROR );
+      } elseif ( ! $new_user_id ) {
+        $new_user_id = new IIRS_Error( IIRS_USER_ALREADY_REGISTERED, 'Could not create your user account because of a system error. Please try again tomorrow.', 'User creation failed, no indication error', IIRS_MESSAGE_SYSTEM_ERROR );
+      } else {
         // test the login, and actually login immediately
         $wp_user = wp_signon( array(
           'user_login'    => $name,
-          'user_password' => $password,
+          'user_password' => $pass,
           'remember'      => true
         ) );
         // setup the user
+        // TODO; wp_signon error control...?
         if ( $wp_user ) {
           // set role
           // IIRS_0_USER_ROLE_NAME is added during plugin activation
@@ -458,19 +613,35 @@ class IIRS {
             // TODO: show a NOTICE for missing user role?
             $wp_user->set_role( 'subscriber' );
           }
+          // populate global $current_user
+          wp_set_current_user( $new_user_id );
         }
-        // email and password to the user
-        // this is carried out in user_register() above
       }
     }
 
     return $new_user_id;
   }
 
-  public static function delete_user( $user_ID ) {
+  public static function delete_current_user() {
     // used when the recent add user works but the add TI fails
     require_once(ABSPATH.'wp-admin/includes/user.php' );
-    wp_delete_user( $user_ID, false ); // false = do not Reassign posts and links to new User ID.
+    global $current_user;
+    $ret = TRUE;
+
+    get_currentuserinfo();
+    $user_id = $current_user->ID;
+    if ( $user_id ) {
+      IIRS_0_debug_print( "logging out and deleting user [$user_id]" );
+      wp_logout();
+      if ( ! wp_delete_user( $user_id, false ) ) { // false = do not Reassign posts and links to new User ID.
+        // user deletion failed, no error report
+        $ret = new IIRS_Error( IIRS_FAILED_USER_DELETE, 'Could not delete the recently added user to allow re-addtion', 'User delete failed', IIRS_MESSAGE_SYSTEM_ERROR );
+      }
+    } else {
+      $ret = new IIRS_Error( IIRS_FAILED_USER_DELETE, 'Could not logout and delete the current user because no current user was found to allow re-addtion. This might cause problems when trying again', 'No current User', IIRS_MESSAGE_SYSTEM_ERROR );
+    }
+
+    return $ret;
   }
 
   public static function add_TI( $user_ID, $registering_server, $initiative_name, $town_name, $location_latitude, $location_longitude, $location_description, $location_country, $location_full_address = '',  $location_granuality = '', $location_bounds = '', $domain = '' ) {
@@ -510,7 +681,7 @@ class IIRS {
     add_post_meta( $post_id, 'domain',                $domain, false );
     add_post_meta( $post_id, 'location_latitude',     $location_latitude, false );
     add_post_meta( $post_id, 'location_longitude',    $location_longitude, false );
-    add_post_meta( $post_id, 'location_townname',     $town_name, false );
+    add_post_meta( $post_id, 'location_town_name',     $town_name, false );
     add_post_meta( $post_id, 'location_description',  $location_description, false );
     add_post_meta( $post_id, 'location_country',      $location_country, false );
     add_post_meta( $post_id, 'location_full_address', $location_full_address, false);
@@ -551,40 +722,66 @@ class IIRS {
       $translated_values = self::translate_TI_fields( $new_values );
       $translated_values['post_ID']   = $post_id;
       $translated_values['post_type'] = $post->post_type;
-      print("translated values:\n");
-      var_dump( $translated_values );
+      IIRS_0_debug_print("translated values:");
+      IIRS_0_debug_var_dump( $translated_values );
       edit_post( $translated_values );
       foreach ( $translated_values['_meta'] as $meta_key => $meta_value ) {
         update_post_meta( $post_id, $meta_key, $meta_value );
       }
     } else {
-      print( "TI not found [$TI_ID]!\n" );
+      IIRS_0_debug_print( "TI not found [$TI_ID]!" );
     }
   }
 
   public static function update_user( $new_values ) {
     // returns native user id on success
     // returns null on failure
-    global $current_user;
+    global $current_user, $wpdb;
     $ret = null;
     get_currentuserinfo();
 
-    var_dump($current_user);
+    if ( $current_user && $current_user->ID ) {
+      $user_id                 = $current_user->ID;
+      $translated_values       = self::translate_user_fields( $new_values );
+      $translated_values['ID'] = $user_id;
+      IIRS_0_debug_var_dump( $translated_values );
 
-    $translated_values = self::translate_user_fields( $new_values );
-    $translated_values['ID'] = $current_user->ID;
-    // TODO: a bug in line 194 in registration.php does not include user_login as an editable field
-    $user_id = wp_update_user( $translated_values );
+      // a bug in line 194 in registration.php does not include user_login as an editable field
+      // here we run a direct DB change to achieve this
+      if ( isset( $translated_values[ 'user_login' ] ) ) {
+        $user_login = $translated_values[ 'user_login' ];
+        if ( ! empty( $user_login ) && $user_login != $current_user->user_login ) {
+          IIRS_0_debug_print( '** updating user_login manually with database query due to bug in wordpress...' );
+          // TODO: user_login update disabled at the moment because it causes a logout.
+          // the input field should be disabled currently to prevent this update
+          return new IIRS_Error( IIRS_FAILED_USER_UPDATE, 'Failed to update your user details. Please try again tomorrow.', 'user_login disabled because it logs the user out. next version!', IIRS_MESSAGE_SYSTEM_ERROR );
+          // $wpdb->update( $wpdb->users, array( 'user_login' => $user_login ), array( 'ID' => $user_id ) );
+        }
+      }
+      $user_id = wp_update_user( $translated_values );
 
-    if ( is_wp_error( $user_id ) ) {
-      var_dump( $user_id );
-      exit(0);
-      $ret = null;
+      if ( is_wp_error( $user_id ) ) {
+        $ret = new IIRS_Error( IIRS_FAILED_USER_UPDATE, 'Failed to update your user details. Please try again tomorrow.', $user_id->get_error_message(), IIRS_MESSAGE_SYSTEM_ERROR );
+        IIRS_0_debug_print( $ret );
+      } else {
+        // re-populate the global $current_user
+        // it is the callers responsibility to re-populate any data containing user information
+
+        // TODO: *********** this is a HACK. we cannot get Wordpress to update its cache of user data without a page refresh
+        global $wp;
+        wp_redirect( "/$wp->request" );
+        exit;
+        // the following do not work
+        // get_userdata( $user_id );
+        // wp_set_current_user( $user_id );
+
+        IIRS_0_debug_print( "user_id: $user_id" );
+        IIRS_0_debug_var_dump( $current_user );
+        $ret = $user_id;
+      }
     } else {
-      // re-populate the global $current_user
-      // it is the callers responsibility to re-populate any data containing user information
-      get_currentuserinfo();
-      $ret = $user_id;
+      $ret = new IIRS_Error( IIRS_FAILED_USER_UPDATE, 'Failed to update your user details. Please try again tomorrow.', 'No current user for update process.', IIRS_MESSAGE_SYSTEM_ERROR );
+      IIRS_0_debug_print( $ret );
     }
 
     return $ret;
@@ -599,7 +796,7 @@ class IIRS {
 
     // get the singular current users TI registration
     get_currentuserinfo();
-    if ( $current_user ) {
+    if ( $current_user && $current_user->ID ) {
       $posts_array = get_posts( array(
         'post_type'      => IIRS_0_CONTENT_TYPE,
         'author'         => $current_user->ID,
@@ -614,13 +811,48 @@ class IIRS {
     return $post;
   }
 
+  public static function TIs_nearby( $latitude, $longitude, $location_description = '', $max_TIs = IIRS_0_MAX_NEARBY ) {
+    IIRS_0_set_not_supported_message( "IIRS::TIs_nearby()" );
+    return array();
+  }
+
+  public static function posts_where( $where, &$wp_query ) {
+    global $wpdb;
+    // wp_query / get_posts() call MUST include: 'suppress_filters' => false,
+    if ( $post_title = $wp_query->get( 'post_title' ) ) {
+      $where .= ' AND ' . $wpdb->posts . '.post_title = \'' . esc_sql( $post_title ) . '\'';
+    }
+    return $where;
+  }
+
+  public static function TI_same_name( $initiative_name ) {
+    // the input $town_nameBase should already be sanitised.
+    // that is, stripped of transition words like "Transition"
+    // use: IIRS_0_remove_transition_words( ... )
+    $TI = FALSE;
+
+    // this get_posts() call takes advantage of the wp_query post_where filter above
+    // enabling the post_title parameter
+    // see the IIRS::posts_where( ... ) filter above
+    $posts = get_posts( array(
+      'post_type'        => IIRS_0_CONTENT_TYPE,
+      'post_title'       => $initiative_name,  // see the IIRS::posts_where( ... ) filter above
+      'posts_per_page'   => 1,
+      'offset'           => 0,
+      'suppress_filters' => false,             // see the IIRS::posts_where( ... ) filter above
+    ) );
+    if ( count( $posts ) ) $TI = self::TI_from_post( $posts[0] );
+
+    return $TI;
+  }
+
   public static function TI_all( $page_size, $page_offset ) {
     // NOTE: this function runs in a <script> tags so errors will be hidden
     $all_TIs = array();
 
     $posts = get_posts( array(
       'post_type'      => IIRS_0_CONTENT_TYPE,
-      'posts_per_page' => $page_size,
+      'posts_per_page' => ( $page_size ? $page_size : 1000000 ),
       'offset'         => $page_offset,
     ) );
 
@@ -636,7 +868,7 @@ class IIRS {
     get_currentuserinfo();
     $user = NULL;
 
-    if ( $current_user ) {
+    if ( $current_user && $current_user->ID && $current_user->data ) {
       $user = array();
       $user['native_ID'] = $current_user->ID;
       $user['name']      = $current_user->data->user_login;
@@ -687,6 +919,9 @@ class IIRS {
   }
 
   public static function TI_from_current_user() {
+    // returns standard TI array if found
+    // returns NULL if no TI: this is not an error
+    // returns an IIRS_Error if a technical error occurs
     $post = self::users_TI_post();
     return self::TI_from_post( $post );
   }
@@ -699,28 +934,35 @@ class IIRS {
   }
 
   public static function login( $name, $pass ) {
+    $ret = FALSE;
+
     $user = wp_signon( array(
       'user_login'    => $name,
       'user_password' => $pass,
       'remember'      => true,
     ) );
+
+    if ( is_wp_error( $user ) ) $ret = new IIRS_Error( IIRS_LOGIN_FAILED, 'Login Failed', $user->get_error_message(), IIRS_MESSAGE_USER_ERROR );
+    else                        $ret = TRUE;
+
+    return $ret;
   }
 
 
   public static function current_user_can( $caps, $cap, $user_id, $args ) {
     global $post;
     $allowed = false;
-      var_dump( $caps );
-      var_dump( $cap );
-      var_dump( $user_id );
+      IIRS_0_debug_var_dump( $caps );
+      IIRS_0_debug_var_dump( $cap );
+      IIRS_0_debug_var_dump( $user_id );
 
 
     if ( $post && IIRS_0_CONTENT_TYPE == $post->post_type && 'edit_post' == $cap ) {
-      var_dump( $post->post_author );
+      IIRS_0_debug_var_dump( $post->post_author );
       // $allowed = ( $post->post_author == "$user_id" );
       // $caps['edit_post'] = true;
     }
-    var_dump( $allowed );
+    IIRS_0_debug_var_dump( $allowed );
     return true;
   }
 
@@ -732,58 +974,73 @@ class IIRS {
     // types include bare pages, widget systems, images and optional redirects
     global $wp_query, $wp;
 
-    if ( $wp_query->is_404 ) {
+    if ( $wp_query && $wp_query->is_404 && $wp && $wp->request ) {
+      // TODO: this whole IIRS::wp() => fake_page() part can be moved in to the IIRS_common section
+      // return content & title, IIRS_Error, or demand an exit
       $request_parts = explode( '/', $wp->request ); // explode() PHP 4
-      if ( count( $request_parts ) >= 2 && IIRS_PLUGIN_NAME == $request_parts[0] ) {
-        status_header( 200 );
-        $widget_folder = $request_parts[1];
+      if ( IIRS_PLUGIN_NAME == $request_parts[0] ) {
+        // $request_parts    = IIRS/registration/widgetloader
+        // $request_parts[0] = IIRS_PLUGIN_NAME: IIRS
+        // $request_parts[1] = $widget_folder:   registration / mapping / edit / etc.
+        // $request_parts[2] = $page_stem:       widgetloader or index / domain_selection / etc.
+        $widget_folder = ( count( $request_parts ) > 1 ? $request_parts[1] : 'registration' );
         $page_stem     = ( count( $request_parts ) > 2 ? $request_parts[2] : '' );
+        $widget_is_dir = is_dir( IIRS__COMMON_DIR . $widget_folder );
 
         // various path identifiers and defaults
-        if ( !$page_stem ) $page_stem = 'index';
+        if ( $widget_is_dir && ! $page_stem ) $page_stem = 'index';
         // some servers will restrict direct access to PHP files so URLs do not have php extensions
-        $page_extension = ( !pathinfo( $page_stem, PATHINFO_EXTENSION ) ? '.php' : '' ); // pathinfo() PHP 4 >= 4.0.3, PHP 5
-        $page_path      = "$widget_folder/$page_stem$page_extension";
+        $page_extension = ( ! pathinfo( $page_stem, PATHINFO_EXTENSION ) ? '.php' : '' ); // pathinfo() PHP 4 >= 4.0.3, PHP 5
+        $page_path      = ( $widget_is_dir ? "$widget_folder/$page_stem$page_extension" : "$widget_folder$page_extension" );
 
         // ---------------------------------------------------- direct request for the widgetloader.js
         if ( strstr( $page_stem, 'widgetloader' )) {
           // widgetloader javascript will examine the $widget_folder and request the appropriate file
-          require_once( 'IIRS_common/widgetloader.php' );
+          // and also requests all the appropriate JavaScript and CSS for the widget based interface
+          ob_clean();  // any NOTICES they made their way through
+          status_header( 200 );
+          require_once( IIRS__COMMON_DIR . 'widgetloader.php' );
           exit( 0 );
         }
 
         // ---------------------------------------------------- image request
         elseif ( 'images' == $widget_folder ) {
+          // /IIRS/images/<image_stem>
           $file_extension = pathinfo( $page_stem, PATHINFO_EXTENSION );
+          $mime = NULL;
           if ( ! $file_extension ) { // pathinfo() PHP 4 >= 4.0.3, PHP 5
-            if (    file_exists( __DIR__ . "/IIRS_common/images/$page_stem.png" )) $file_extension = 'png';
+            if (     file_exists( __DIR__ . "/IIRS_common/images/$page_stem.png" )) $file_extension = 'png';
             elseif ( file_exists( __DIR__ . "/IIRS_common/images/$page_stem.gif" )) $file_extension = 'gif';
             // TODO: image extension not found?
             $page_stem .= ".$file_extension";
           }
           switch ( $file_extension ) {
-            case 'png': {$mime = 'image/png'; break;}
-            case 'png': {$mime = 'image/gif'; break;}
+            case 'png': { $mime = 'image/png'; break; }
+            case 'png': { $mime = 'image/gif'; break; }
           }
           $image_path = __DIR__ . "/IIRS_common/images/$page_stem";
 
-          if (!file_exists($image_path)) {
-            http_response_code(404);
-            print("can't find [$image_path]");
-            exit(0);
-          }
-
           ob_clean();  // any NOTICES they made their way through
-          header( "Content-type: $mime", true );
-          print( file_get_contents( $image_path ));
+          if ( file_exists( $image_path ) ) {
+            status_header( 200 );
+            header( "Content-type: $mime", true );
+            print( file_get_contents( $image_path ) );
+          } else {
+            status_header( 404 );
+            // print("can't find [$image_path]");
+          }
           exit( 0 );
         }
 
         // ---------------------------------------------------- bare pages
+        // do not allow the system to include header and footer here.
+        // much like the widget functionality
+        // this is not relevant to the widget function. only direct access to teh host website
         elseif ( 'export' == $widget_folder || 'import' == $widget_folder ) {
           ob_clean(); // any NOTICES they made their way through
+          status_header( 200 );
           header( 'Content-type: text/xml', true );
-          require_once( $page_path );
+          require_once( IIRS__COMMON_DIR . $page_path );
           exit( 0 );
         }
 
@@ -792,7 +1049,9 @@ class IIRS {
         elseif ( 'true' == self::input( 'IIRS_widget_mode' ) ) {
           // javascript: interaction.js translations_js.php and general_interaction.js are dynamically written in to widgetloader.php
           // javascript: these responses will be dynamically added in to the HTML on the client so no need to send the JS again
-          require_once( $page_path );
+          ob_clean(); // any NOTICES they made their way through
+          status_header( 200 );
+          require_once( IIRS__COMMON_DIR . $page_path );
           exit( 0 );
         }
 
@@ -819,6 +1078,8 @@ class IIRS {
           // static JavaScript and CSS
           // javascript: do not add popup.php because it will override the form submits and show the popups
           // javascript: need to add all JS to every page here because each one is new
+          //
+          // manual translator hints. these are processed by /IIRS_common/read_translations.php
           // IIRS_0_translation('IIRS documentation');
           // IIRS_0_translation('IIRS edit');
           // IIRS_0_translation('IIRS export');
@@ -830,7 +1091,13 @@ class IIRS {
           // IIRS_0_translation('IIRS view');
           $title   = IIRS_0_translation( "IIRS $widget_folder" );
           $content = self::content( $widget_folder, $page_stem );
-          self::fake_page( $title, $content );
+          if ( IIRS_is_error( $content ) ) {
+            // leave the 404 to show by itself
+          } else {
+            ob_clean(); // any NOTICES they made their way through
+            status_header( 200 );
+            self::fake_page( $title, $content );
+          }
         }
       }
     }
@@ -839,6 +1106,10 @@ class IIRS {
   private static function input( $sKey ) {
     // return value from $_POST and $_GET arrays
     return ( isset( $_POST[$sKey] ) ? $_POST[$sKey] : ( isset( $_GET[$sKey] ) ? $_GET[$sKey] : NULL ));
+  }
+
+  public static function body_class() {
+    return array( IIRS_PLUGIN_NAME );
   }
 
   private static function fake_page( $title, $content ) {
@@ -850,9 +1121,10 @@ class IIRS {
     // prevent encoding of our post content
     remove_all_filters( 'the_content', 'plugin_filters' );
     wp_enqueue_style( 'IIRS_fake_page_view', plugins_url( 'IIRS/fake_page.css' ));
+    add_filter( 'body_class', array( IIRS_PLUGIN_NAME, 'body_class' ) );
 
     // now create the fake post with our contents on it
-    $id=-42; // need an id: TODO: is this reasonable?
+    $id=-42; // need an id
     $post = new stdClass();
     $post->ID            = $id;
     $post->post_author   = '1';
@@ -897,31 +1169,36 @@ class IIRS {
     // Wordpress specific override the content of full and summary TI view pages
     // this is within a display frame not controlled by IIRS
     // This function comes in to play when:
-    //   the override display of TIs is off and the website is using Wordpress lists and views of TIs
+    //   there is no override display of TIs and the website is using Wordpress lists and views of TIs
     // Otherwise the /IIRS/list, /IIRS/view and /IIRS/edit are used
-    // This function is similar to using a WordPress single-initiative_profile.php template
-    //   which is included in templates and can be used.
+    // This function is similar to using a WordPress theme single-initiative_profile.php template
+    //   with a get_template_part( 'content', 'initiative_profile' ) call
     //   this system however, links easily and directly in to the_content
-    // TODO: maybe use the template system and link in to the /IIRS/view from there.
+    // TODO: maybe use the template system self::content() call and link in to the /IIRS/view from there.
     global $post;
 
-    if ( true == IIRS_0_setting( 'override_TI_content_template' ) && $post && IIRS_0_CONTENT_TYPE == $post->post_type ) {
-      // so we must manually include css and javascript that we want
-      wp_enqueue_style(  'IIRS_general', plugins_url( 'IIRS/IIRS_common/general.css' ));
-      wp_enqueue_script( 'IIRS_general', plugins_url( 'IIRS/IIRS_common/general_interaction.js' ));
+    if ( $post && IIRS_0_CONTENT_TYPE == $post->post_type ) {
+      // check for a custom content-initiative_profile.php in the theme
+      $theme_custom_content_template = locate_template( array( 'content-' . IIRS_0_CONTENT_TYPE . '.php' ) );
+      if (  ! $theme_custom_content_template && true === IIRS_0_setting( 'override_TI_content_template' ) ) {
+        // ok, no custom content templates, so let us do our own stuff
+        // so we must manually include css and javascript that we want
+        wp_enqueue_style(  'IIRS_general', plugins_url( 'IIRS/IIRS_common/general.css' ));
+        wp_enqueue_script( 'IIRS_general', plugins_url( 'IIRS/IIRS_common/general_interaction.js' ));
 
-      $TI          = self::TI_from_post( $post );
-      $list_mode   = ! is_single(); // is this the full page TI or in a list?
+        $TI          = self::TI_from_post( $post );
+        $list_mode   = ! is_single(); // is this the full page TI or in a list?
 
-      ob_start(); // ob_start() PHP 4, PHP 5
-      $hide_errors = true;
-      if ( $hide_errors ) print( '<script type="text/javascript">' );
-      require_once( 'translations_js.php' );
-      require_once( 'global_js.php' );
-      if ( $hide_errors ) print( '</script>' );
-      include( 'view/index.php' );
-      $content = ob_get_contents();
-      ob_end_clean();
+        ob_start(); // ob_start() PHP 4, PHP 5
+        $hide_errors = true;
+        if ( $hide_errors ) print( '<script type="text/javascript">' );
+        require_once( IIRS__COMMON_DIR . 'translations_js.php' );
+        require_once( IIRS__COMMON_DIR . 'global_js.php' );
+        if ( $hide_errors ) print( '</script>' );
+        include( 'IIRS_common/view/index.php' );
+        $content = ob_get_contents();
+        ob_end_clean();
+      }
     }
 
     return $content;
@@ -970,7 +1247,7 @@ class IIRS {
 
           // meta data: these fields are updated separately
           // weird Wordpress uses a meta id for edit_post() updates
-          case 'townname':           {$translated_values['_meta']['location_townname']     = $value; break;}
+          case 'town_name':           {$translated_values['_meta']['location_town_name']     = $value; break;}
           case 'location_latitude':   {$translated_values['_meta']['location_latitude']     = $value; break;}
           case 'location_longitude':   {$translated_values['_meta']['location_longitude']    = $value; break;}
           case 'location_description':  {$translated_values['_meta']['location_description']  = $value; break;}
@@ -1030,6 +1307,9 @@ class IIRS {
       add_option( IIRS_PLUGIN_NAME . '_show_activation_message', true );
       add_option( IIRS_PLUGIN_NAME . '_flush_rewrite_rules', true );
     }
+
+    // TODO: admin notice if wp-settings does not contain wp_magic_quotes()
+    // if ( strstr( file_get_contents( ABSPATH . 'wp-settings.php' ), 'wp_magic_quotes()' )  === FALSE )
 
     // recommended plugins
     add_option( IIRS_PLUGIN_NAME . '_recommend_plugins', true );

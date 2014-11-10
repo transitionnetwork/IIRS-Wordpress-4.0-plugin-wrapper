@@ -13,69 +13,59 @@ function IIRS_0_current_path() {
   return $wp->request;
 }
 
-function IIRS_0_available_languages() {
-  return array( 'en', 'es', '( dev! )' );
-}
-
 function IIRS_0_setting( $setting ) {
-  // TODO: need to replace this IIRS_0_setting() with get_option() when the defauls are registered
-  switch ($setting) {
-    case 'offer_buy_domains': return false;
-    case 'add_projects': return false;
-    case 'advanced_settings': return false;
-    case 'image_entry': return false;
-    case 'lang_code': return 'en';
-    case 'server_country': return NULL;
-    case 'override_TI_display': return false;
-    case 'override_TI_editing': return true;
-    case 'override_TI_content_template': return true;
-    case 'language_selector': return false;
-    case 'thankyou_for_registering_url': return null;
-    default: return false;
-  }
+  return IIRS::setting( $setting );
 }
 
-function IIRS_0_http_request( $url, $timeout = 2.0, $var_dump_non_200 = FALSE ) {
-  global $wp_version;
-
-  $args = array(
-    'timeout'     => $timeout,
-    'redirection' => 0,
-    'httpversion' => '1.0',
-    'user-agent'  => 'WordPress/' . $wp_version . '; ' . get_bloginfo( 'url' ),
-    'blocking'    => true,
-    'headers'     => array(),
-    'cookies'     => array(),
-    'body'        => null,
-    'compress'    => false,
-    'decompress'  => true,
-    'sslverify'   => true,
-    'stream'      => false,
-    'filename'    => null
-  );
-  $response = wp_remote_get( $url, $args );
-  $body     = wp_remote_retrieve_body( $response );
-
-  return $body;
+function IIRS_0_http_request( $url, $post_array = null, $timeout = 2.0, $ua = null ) {
+  return IIRS::http_request( $url, $post_array, $timeout, $ua );
 }
 
-function IIRS_0_set_message( $message, $IIRS_widget_mode = true ) {
-  if ( $IIRS_widget_mode ) {
-    print( "<div class=\"IIRS_0_message\">$message</div>" );
-  } else {
-    // needs to be a function! add_action( 'user_admin_notices', $message );
-  }
+function IIRS_0_set_message( $mess_no, $message, $message_detail = null, $level = IIRS_MESSAGE_USER_INFORMATION, $user_action = null, $args = null ) {
+  return IIRS::set_message( $mess_no, $message, $message_detail, $level, $user_action, $args );
+}
+
+function IIRS_0_send_email( $email_address, $subject, $body, $add_headers = array() ) {
+  return IIRS::send_email( $email_address, $subject, $body, $add_headers );
+}
+
+function IIRS_0_input( $key, $raw = FALSE ) {
+  // use IIRS_RAW_USER_INPUT constant to indicate TRUE for $raw
+  // this function needs to return the escaped value, unless asked otherwise
+  // PHP may have already escaped it with get_magic_quotes_gpc
+  // the framework may have re-written the super-globals $_POST
+  //   e.g. Wordpress load.php does this
+  // IIRS_0_input(town_name) = o\'brien
+  // IIRS_0_input(town_name, true) = o'brien
+
+  // Wordpress applies wp_magic_quotes(); in wp-settings.php and does not tell anyone
+  // see wp-includes/load.php to see how it does this
+  // TODO: cache look to see if wp_magic_quotes() is actually in wp-settings.php
+  $value_with_slashes = ( isset( $_POST[$key] ) ? $_POST[$key] : ( isset($_GET[$key] ) ? $_GET[$key] : NULL ) );
+  $final_value        = NULL;
+  if     ( $raw ) $final_value = stripslashes( $value_with_slashes );
+  else            $final_value = $value_with_slashes;
+
+  return $final_value;
+}
+
+function IIRS_0_debug() {
+  return defined('WP_DEBUG') && WP_DEBUG;
 }
 
 // ------------------------------------------------------------------------
 // ------------------------------------------------------- create and update user and TI
 // ------------------------------------------------------------------------
-function IIRS_0_TI_add_user( $name, $email, $pass, $phone ) {
+function IIRS_0_TI_add_user( $name, $email, $pass, $phone = null ) {
   return IIRS::add_user( $name, $email, $pass, $phone );
 }
 
-function IIRS_0_delete_user( $user_ID ) {
-  return IIRS::delete_user( $user_ID );
+function IIRS_0_generate_password( $name = null ) {
+  return IIRS::generate_password( $name );
+}
+
+function IIRS_0_delete_current_user() {
+  return IIRS::delete_current_user();
 }
 
 function IIRS_0_TI_add_TI( $user_ID, $registering_server, $initiative_name, $town_name, $location_latitude, $location_longitude, $location_description, $location_country, $location_full_address = '',  $location_granuality = '', $location_bounds = '', $domain = '' ) {
@@ -83,8 +73,8 @@ function IIRS_0_TI_add_TI( $user_ID, $registering_server, $initiative_name, $tow
 }
 
 function IIRS_0_next_initnumber() {
-  print( 'IIRS_0_next_initnumber() not supported' );
-  exit( 0 );
+  IIRS_0_set_not_supported_message( 'IIRS_0_next_initnumber' );
+  return NULL;
 }
 
 function IIRS_0_TI_update_TI( $values ) {
@@ -115,13 +105,12 @@ function IIRS_0_TIs_all( $page_size = 0, $page_offset = 0 ) {
   return IIRS::TI_all( $page_size, $page_offset );
 }
 
-function IIRS_0_TIs_viewport() {
-  print( 'IIRS_0_TIs_viewport() function not supported yet' );
-  exit( 0 );
+function IIRS_0_TIs_nearby( $latitude, $longitude, $location_description = '', $max_TIs = IIRS_0_MAX_NEARBY ) {
+  return IIRS::TIs_nearby( $latitude, $longitude, $location_description, $max_TIs );
 }
 
-function IIRS_0_TIs_nearby( $latitude, $longitude, $location_description = '', $max_TIs = IIRS_0_MAX_NEARBY ) {
-  print( "IIRS_0_TIs_nearby() function not supported yet\n" );
+function IIRS_0_TI_same_name( $initiative_name ) {
+  return IIRS::TI_same_name( $initiative_name );
 }
 
 function IIRS_0_details_user() {
@@ -144,28 +133,21 @@ function IIRS_0_logged_in() {
 }
 
 function IIRS_0_login( $name, $pass ) {
-  return IIRS::login();
+  return IIRS::login( $name, $pass );
 }
 
 // ------------------------------------------------------------------------
 // ------------------------------------------------------- misc
 // ------------------------------------------------------------------------
-function IIRS_0_framework() {
+function IIRS_0_framework_name() {
   return 'WordPress';
 }
 
 function IIRS_0_locale() {
-  return get_locale();
+  return IIRS::locale();
 }
 
-function IIRS_0_languages() {
-  // $language_filenames will have partial filenames like IIRS-en_EN in it
-  // we sanitize this to the language code, e.g. en_EN
-  $language_filenames = get_available_languages( dirname( __FILE__ ) . '/languages' );
-  $language_codes     = array();
-  foreach ( $language_filenames as $filename ) {
-    array_push( $language_codes, substr( $filename, 5 ) );
-  }
-  return $language_codes;
+function IIRS_0_available_languages() {
+  return IIRS::available_languages();
 }
 ?>

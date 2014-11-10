@@ -1,10 +1,10 @@
 # PO language file for the IIRS project
 # https://www.gnu.org/savannah-checkouts/gnu/gettext/manual/html_node/PO-Files.html
 # Project-Id-Version: TransitionNetwork IIRS
-# Report-Msgid-Bugs-To: Annesley Newholm <annesley_newholm@yahoo.it>
+# Report-Msgid-Bugs-To: Transition Network IIRS team <edmitchell@transitionnetwork.org>
 # POT-Creation-Date: 2014-07-21 04:00+0730
 # PO-Revision-Date: 2014-07-21 04:00+0730
-# Last-Translator: Annesley Newholm <annesley_newholm@yahoo.it>
+# Last-Translator: Transition Network IIRS team <edmitchell@transitionnetwork.org>
 # Number-Translations: 93
 # Folder: /var/www/wordpress/tnv3/wp-content/plugins/IIRS
 # URL: /wp-content/plugins/IIRS/IIRS_common/read_translations.php?format=PO&start_directory=/var/www/wordpress/tnv3/wp-content/plugins/IIRS
