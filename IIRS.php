@@ -1,4 +1,11 @@
 <?php
+/* Copyright 2015, 2016 Transition Network ltd
+ * This program is distributed under the terms of the GNU General Public License
+ * as detailed in the COPYING file included in the root of this plugin
+ */
+?>
+
+<?php
 /**
  * @package IIRS
  */
@@ -42,14 +49,16 @@ define( 'IIRS_0_USER_ROLE_NAME',    'initiative_facilitator' );
 define( 'IIRS_0_POST_CATEGORY',     'Initiatives' );
 define( 'IIRS_0_CONTENT_TYPE_SLUG', 'initiatives' ); // initiatives/bedford-transition-town
 define( 'IIRS_0_WORDPRESS_ROOT',    WP_CONTENT_DIR . '/..' );
+define( 'IIRS_WP_OPTIONS_ENABLED',  FALSE );
 
 register_activation_hook(   __FILE__, array( IIRS_PLUGIN_NAME, 'plugin_activation' ) );
 register_deactivation_hook( __FILE__, array( IIRS_PLUGIN_NAME, 'plugin_deactivation' ) );
 
 set_include_path( get_include_path() . PATH_SEPARATOR );
 require_once( IIRS__PLUGIN_DIR . 'IIRS_abstraction_layer.inc' );
-require_once( IIRS__COMMON_DIR . 'define.php' );
-require_once( IIRS__COMMON_DIR . 'IIRS_Error.php' );
+require_once( IIRS__COMMON_DIR . 'define.php' );     // no direct action or includes, just defines
+require_once( IIRS__COMMON_DIR . 'utility.php' );    // no direct action or includes, just functions
+require_once( IIRS__COMMON_DIR . 'IIRS_Error.php' ); // no direct action or includes, just the IIRS_Error class
 require_once( IIRS__PLUGIN_DIR . 'class-iirs.php' );
 require_once( IIRS_0_WORDPRESS_ROOT . '/wp-admin/includes/taxonomy.php' );
 require_once( IIRS_0_WORDPRESS_ROOT . '/wp-admin/includes/post.php' );

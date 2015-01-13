@@ -1,10 +1,17 @@
 <?php
+/* Copyright 2015, 2016 Transition Network ltd
+ * This program is distributed under the terms of the GNU General Public License
+ * as detailed in the COPYING file included in the root of this plugin
+ */
+?>
+
+<?php
 defined( 'ABSPATH' ) or die( "No script kiddies please!" );
 
 // ------------------------------------------------------------------------
 // --------------------------------------------------- IIRS_common abstraction layer
 // ------------------------------------------------------------------------
-function IIRS_0_translation( $string_to_translate ) {
+function IIRS_0_translation( $string_to_translate, $reason = FALSE ) {
   return IIRS::translate( $string_to_translate );
 }
 
@@ -50,7 +57,7 @@ function IIRS_0_input( $key, $raw = FALSE ) {
 }
 
 function IIRS_0_debug() {
-  return defined('WP_DEBUG') && WP_DEBUG;
+  return (defined('WP_DEBUG') && WP_DEBUG) || isset($_GET['debug-IIRS']);
 }
 
 // ------------------------------------------------------------------------

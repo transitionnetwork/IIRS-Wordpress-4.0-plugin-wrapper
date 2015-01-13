@@ -10,6 +10,10 @@ IIRS allows you to comunicate with Transition Towns locally and globally.
 
 == Description ==
 
+Copyright 2015, 2016 Transition Network ltd
+This program is distributed under the terms of the GNU General Public License
+as detailed in the COPYING file included in the root of this plugin
+
 IIRS allows you to comunicate with Transition Towns locally and globally.
 See the README and TODO and documentation in the IIRS_common directory
 

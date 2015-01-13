@@ -1,4 +1,11 @@
 <?php
+/* Copyright 2015, 2016 Transition Network ltd
+ * This program is distributed under the terms of the GNU General Public License
+ * as detailed in the COPYING file included in the root of this plugin
+ */
+?>
+
+<?php
 // Class definition for the IIRS project
 // conforming to Code Standards in:
 // https:// make.wordpress.org/core/handbook/coding-standards/php/
@@ -61,7 +68,7 @@ class IIRS {
     }
   }
   public static function plugin_action_links($links) {
-    $settings_link = '<a href="options-general.php?page=iirs-administrator.php">Settings</a>';
+    $settings_link = '<a href="options-general.php?page=IIRS">Settings</a>';
     array_unshift($links, $settings_link);
     return $links;
   }
@@ -129,21 +136,26 @@ class IIRS {
   }
 
   public static function setting( $setting ) {
-    // TODO: need to replace this IIRS_0_setting() with get_option() when the defauls are registered
-    switch ( $setting ) {
-      case 'offer_buy_domains': return false;
-      case 'add_projects': return false;
-      case 'advanced_settings': return false;
-      case 'image_entry': return false;
-      case 'lang_code': return 'en';
-      case 'server_country': return NULL;
-      case 'override_TI_display': return false;
-      case 'override_TI_editing': return true;
-      case 'override_TI_content_template': return true;
-      case 'language_selector': return false;
-      case 'thankyou_for_registering_url': return null;
-      case 'region_bias': return null;
-      default: return false;
+    // options is go only in version 2
+    if ( IIRS_WP_OPTIONS_ENABLED ) {
+      return get_option( $setting );
+    } else {
+      // Defaults:
+      switch ( $setting ) {
+        case 'offer_buy_domains': return false;
+        case 'add_projects': return false;
+        case 'advanced_settings': return false;
+        case 'image_entry': return false;
+        case 'lang_code': return 'en';
+        case 'server_country': return NULL;
+        case 'override_TI_display': return false;
+        case 'override_TI_editing': return true;
+        case 'override_TI_content_template': return true;
+        case 'language_selector': return false;
+        case 'thankyou_for_registering_url': return null;
+        case 'region_bias': return null;
+        default: return false;
+      }
     }
   }
 
@@ -170,12 +182,17 @@ class IIRS {
 
     $response = ( $post_array ? wp_remote_post( $url, $args ) : wp_remote_get( $url, $args ) );
     if ( is_wp_error( $response ) ) {
-      $body = new IIRS_Error(IIRS_HTTP_FAILED, "Cannot communicate with Transition Registration servers. Sorry! Please try again tomorrow", $response->get_error_message(), IIRS_MESSAGE_EXTERNAL_SYSTEM_ERROR );
+      $body = new IIRS_Error(IIRS_HTTP_FAILED, "Cannot communicate with Transition Registration servers. Sorry! Please try again tomorrow", $response->get_error_message(), IIRS_MESSAGE_EXTERNAL_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION );
     } else {
-      $body = wp_remote_retrieve_body( $response );
-      // regard empty response as an error
-      // because wp_remote_*() do not always report the error correctly it seems
-      if ( $body === '' ) $body = new IIRS_Error(IIRS_HTTP_FAILED, "Cannot communicate with Transition Registration servers. Sorry! Please try again tomorrow", 'Blank response', IIRS_MESSAGE_EXTERNAL_SYSTEM_ERROR );
+      // note that parsing in to the array $response[] is already done
+      $response_code = wp_remote_retrieve_response_code( $response ); // $response[response][code]
+      if ( $response_code == 404 ) $body = new IIRS_Error(IIRS_HTTP_NOT_FOUND, "Page not found", '404 - Page not found', IIRS_MESSAGE_EXTERNAL_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION );
+      else {
+        $body = wp_remote_retrieve_body( $response );          // $response[body]
+        // regard empty response as an error
+        // because wp_remote_*() do not always report the error correctly it seems
+        if ( $body === '' ) $body = new IIRS_Error(IIRS_HTTP_FAILED,    "Cannot communicate with Transition Registration servers. Sorry! Please try again tomorrow", 'Blank response', IIRS_MESSAGE_EXTERNAL_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION );
+      }
     }
 
     return $body;
@@ -244,11 +261,13 @@ class IIRS {
     IIRS_0_debug_print( "  smtp_port:" . ini_get('smtp_port') . ""  );
 
     add_filter( 'wp_mail_content_type', array( IIRS_PLUGIN_NAME, 'wp_mail_content_type' ) );
-    // TODO: make From address configurable
     // array_merge: this is a numeric key array so the 2 will be appended, not overwritten
     // http://php.net/manual/en/function.array-merge.php
-    $all_headers = array_merge( array(
-      'From: "Parrot" <annesley@annesley.parrot.transitionnetwork.org>',
+    // TODO: make From address configurable in settings, not translation
+    $from_name    = IIRS_0_translation( 'TransitionTowns registration service' );
+    $from_address = IIRS_0_translation( 'registrar@transitionnetwork.org' );
+    $all_headers  = array_merge( array(
+      "From: \"$from_name\" <$from_address>",
       'Content-Type: text/html; charset=UTF-8',
     ), $add_headers );
     $wp_mail_result = wp_mail( $email_address, $subject, $body, $all_headers );
@@ -256,7 +275,7 @@ class IIRS {
 
     if ( is_wp_error( $wp_mail_result )) {
       IIRS_0_debug_var_dump( $wp_mail_result );
-      $ret = new IIRS_error( IIRS_REGISTRATION_EMAIL_FAILED, "Failed to send you your registration details and password. Please contact us by email if you need to login.", $wp_mail_result->get_message(), IIRS_MESSAGE_SYSTEM_ERROR );
+      $ret = new IIRS_error( IIRS_REGISTRATION_EMAIL_FAILED, "Failed to send you your registration details and password. Please contact us by email if you need to login.", $wp_mail_result->get_message(), IIRS_MESSAGE_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION, array( '$email_address' => $email_address ) );
     } else {
       IIRS_0_debug_print( "no email errors reported" );
       $ret = TRUE;
@@ -352,6 +371,7 @@ class IIRS {
 
   public static function admin_init_option_settings() {
     // standard IIRS settings
+    // http://codex.wordpress.org/Creating_Options_Pages
     register_setting( IIRS_PLUGIN_NAME, 'offer_buy_domains' );
     register_setting( IIRS_PLUGIN_NAME, 'add_projects' );
     register_setting( IIRS_PLUGIN_NAME, 'advanced_settings' );
@@ -361,13 +381,15 @@ class IIRS {
     register_setting( IIRS_PLUGIN_NAME, 'override_TI_display' );
     register_setting( IIRS_PLUGIN_NAME, 'override_TI_editing' );
     register_setting( IIRS_PLUGIN_NAME, 'override_TI_content_template' );
+    register_setting( IIRS_PLUGIN_NAME, 'language_selector' );
+    register_setting( IIRS_PLUGIN_NAME, 'thankyou_for_registering_url' );
 
     // Wordpress specific settings
     register_setting( IIRS_PLUGIN_NAME, 'initiatives_visibility' );
   }
 
   public static function admin_menu() {
-    add_options_page( IIRS_PLUGIN_NAME, IIRS_PLUGIN_NAME, 'manage_options', 'iirs-administrator', array( IIRS_PLUGIN_NAME, 'options_iirs_administrator' ) );
+    add_options_page( IIRS_PLUGIN_NAME, IIRS_PLUGIN_NAME, 'manage_options', 'IIRS', array( IIRS_PLUGIN_NAME, 'options_iirs_administrator' ) );
     //add_submenu_page( 'options-general.php', 'iirs-developer', 'iirs-developer', 'manage_options', 'iirs-developer', array( IIRS_PLUGIN_NAME, 'options_iirs_developer' ) );
   }
 
@@ -531,7 +553,7 @@ class IIRS {
         'show_in_menu'       => true,
         'query_var'          => true,
         'hierarchical'       => false,
-        'has_archive'        => false,
+        'has_archive'        => true, // creates the /initiaives list page
 
         'supports'           => array(
           'title', 'editor', 'author', 'thumbnail', 'excerpt',
@@ -541,7 +563,10 @@ class IIRS {
           'page-attributes',
         ),
 
-        // 'rewrite'            => array( 'slug' => IIRS_0_CONTENT_TYPE_SLUG ), // TODO: admin settings for TI slug
+        'rewrite'            => array( // TODO: admin settings for TI slug + translation!
+          'slug'       => IIRS_0_CONTENT_TYPE_SLUG,
+          'with_front' => true,        // pre-pend /initiatives/ to the post-name URL (default=true)
+        ),
         'menu_position'      => 20, // below Pages
         'menu_icon'          => 'dashicons-video-alt', // TODO: make menu_icon!
         'taxonomies'         => array( 'category', 'post_tag' ),
@@ -562,7 +587,7 @@ class IIRS {
 
 
     // flush the rewrite rules once to create the /initiative_profile/ URL
-    if ( get_option( IIRS_PLUGIN_NAME . '_flush_rewrite_rules' ) ) {
+    if ( get_option( IIRS_PLUGIN_NAME . '_flush_rewrite_rules' ) || isset($_GET['IIRS-flush_rewrite_rules']) ) {
       delete_option( IIRS_PLUGIN_NAME . '_flush_rewrite_rules' );
       if ( isset( $wp_rewrite ) ) $wp_rewrite->flush_rules( false );
     }
@@ -585,14 +610,14 @@ class IIRS {
     $new_user_id = FALSE;
 
     if ( username_exists( $name ) || email_exists( $email )) {
-      $new_user_id = new IIRS_Error( IIRS_USER_ALREADY_REGISTERED, 'There is already a user with this email or username. Please try again.', 'User already exists', IIRS_MESSAGE_USER_WARNING );
+      $new_user_id = new IIRS_Error( IIRS_USER_ALREADY_REGISTERED, 'There is already a user with this email or username. Please try again.', 'User already exists', IIRS_MESSAGE_USER_WARNING, IIRS_MESSAGE_NO_USER_ACTION, array( '$name' => $name, '$email' => $email ) );
     } else {
       $new_user_id = wp_create_user( $name, $pass, $email );
 
       if ( is_wp_error( $new_user_id ) ) {
-        $new_user_id = new IIRS_Error( IIRS_USER_ALREADY_REGISTERED, 'Could not create your user account because of a system error. Please try again tomorrow.', $new_user_id->get_error_message(), IIRS_MESSAGE_SYSTEM_ERROR );
+        $new_user_id = new IIRS_Error( IIRS_USER_ALREADY_REGISTERED, 'Could not create your user account because of a system error. Please try again tomorrow.', $new_user_id->get_error_message(), IIRS_MESSAGE_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION, array( '$name' => $name, '$email' => $email ) );
       } elseif ( ! $new_user_id ) {
-        $new_user_id = new IIRS_Error( IIRS_USER_ALREADY_REGISTERED, 'Could not create your user account because of a system error. Please try again tomorrow.', 'User creation failed, no indication error', IIRS_MESSAGE_SYSTEM_ERROR );
+        $new_user_id = new IIRS_Error( IIRS_USER_ALREADY_REGISTERED, 'Could not create your user account because of a system error. Please try again tomorrow.', 'User creation failed, no indication error', IIRS_MESSAGE_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION, array( '$name' => $name, '$email' => $email ) );
       } else {
         // test the login, and actually login immediately
         $wp_user = wp_signon( array(
@@ -635,10 +660,10 @@ class IIRS {
       wp_logout();
       if ( ! wp_delete_user( $user_id, false ) ) { // false = do not Reassign posts and links to new User ID.
         // user deletion failed, no error report
-        $ret = new IIRS_Error( IIRS_FAILED_USER_DELETE, 'Could not delete the recently added user to allow re-addtion', 'User delete failed', IIRS_MESSAGE_SYSTEM_ERROR );
+        $ret = new IIRS_Error( IIRS_FAILED_USER_DELETE, 'Could not delete the recently added user to allow re-addtion', 'User delete failed', IIRS_MESSAGE_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION, (array) $current_user );
       }
     } else {
-      $ret = new IIRS_Error( IIRS_FAILED_USER_DELETE, 'Could not logout and delete the current user because no current user was found to allow re-addtion. This might cause problems when trying again', 'No current User', IIRS_MESSAGE_SYSTEM_ERROR );
+      $ret = new IIRS_Error( IIRS_FAILED_USER_DELETE, 'Could not logout and delete the current user because no current user was found to allow re-addtion. This might cause problems when trying again', 'No current User', IIRS_MESSAGE_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION );
     }
 
     return $ret;
@@ -754,14 +779,14 @@ class IIRS {
           IIRS_0_debug_print( '** updating user_login manually with database query due to bug in wordpress...' );
           // TODO: user_login update disabled at the moment because it causes a logout.
           // the input field should be disabled currently to prevent this update
-          return new IIRS_Error( IIRS_FAILED_USER_UPDATE, 'Failed to update your user details. Please try again tomorrow.', 'user_login disabled because it logs the user out. next version!', IIRS_MESSAGE_SYSTEM_ERROR );
+          return new IIRS_Error( IIRS_FAILED_USER_UPDATE, 'Failed to update your user details. Please try again tomorrow.', 'user_login disabled because it logs the user out. next version!', IIRS_MESSAGE_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION, array( '$user_login' => $user_login ) );
           // $wpdb->update( $wpdb->users, array( 'user_login' => $user_login ), array( 'ID' => $user_id ) );
         }
       }
       $user_id = wp_update_user( $translated_values );
 
       if ( is_wp_error( $user_id ) ) {
-        $ret = new IIRS_Error( IIRS_FAILED_USER_UPDATE, 'Failed to update your user details. Please try again tomorrow.', $user_id->get_error_message(), IIRS_MESSAGE_SYSTEM_ERROR );
+        $ret = new IIRS_Error( IIRS_FAILED_USER_UPDATE, 'Failed to update your user details. Please try again tomorrow.', $user_id->get_error_message(), IIRS_MESSAGE_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION, $translated_values );
         IIRS_0_debug_print( $ret );
       } else {
         // re-populate the global $current_user
@@ -780,7 +805,7 @@ class IIRS {
         $ret = $user_id;
       }
     } else {
-      $ret = new IIRS_Error( IIRS_FAILED_USER_UPDATE, 'Failed to update your user details. Please try again tomorrow.', 'No current user for update process.', IIRS_MESSAGE_SYSTEM_ERROR );
+      $ret = new IIRS_Error( IIRS_FAILED_USER_UPDATE, 'Failed to update your user details. Please try again tomorrow.', 'No current user for update process.', IIRS_MESSAGE_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION, $new_values );
       IIRS_0_debug_print( $ret );
     }
 
@@ -936,14 +961,26 @@ class IIRS {
   public static function login( $name, $pass ) {
     $ret = FALSE;
 
-    $user = wp_signon( array(
+    $login_details = array(
       'user_login'    => $name,
       'user_password' => $pass,
       'remember'      => true,
-    ) );
+    );
+    $user = wp_signon( $login_details );
 
-    if ( is_wp_error( $user ) ) $ret = new IIRS_Error( IIRS_LOGIN_FAILED, 'Login Failed', $user->get_error_message(), IIRS_MESSAGE_USER_ERROR );
-    else                        $ret = TRUE;
+    if ( is_wp_error( $user ) ) {
+      $ret = new IIRS_Error( IIRS_LOGIN_FAILED, 'Login Failed', $user->get_error_message(), IIRS_MESSAGE_USER_ERROR, IIRS_MESSAGE_NO_USER_ACTION, $login_details );
+    } else {
+      $ret = TRUE;
+
+      // TODO: *********** this is a HACK. we cannot get Wordpress to update its cache of user data without a page refresh
+      global $wp;
+      wp_redirect( "/$wp->request" );
+      exit;
+      // the following do not work
+      // get_userdata( $user_id );
+      // wp_set_current_user( $user_id );
+    }
 
     return $ret;
   }
@@ -1032,7 +1069,7 @@ class IIRS {
           exit( 0 );
         }
 
-        // ---------------------------------------------------- bare pages
+        // ---------------------------------------------------- bare pages (no header / footer etc.)
         // do not allow the system to include header and footer here.
         // much like the widget functionality
         // this is not relevant to the widget function. only direct access to teh host website
@@ -1080,15 +1117,15 @@ class IIRS {
           // javascript: need to add all JS to every page here because each one is new
           //
           // manual translator hints. these are processed by /IIRS_common/read_translations.php
-          // IIRS_0_translation('IIRS documentation');
-          // IIRS_0_translation('IIRS edit');
-          // IIRS_0_translation('IIRS export');
-          // IIRS_0_translation('IIRS import');
-          // IIRS_0_translation('IIRS list');
-          // IIRS_0_translation('IIRS mapping');
-          // IIRS_0_translation('IIRS registration');
-          // IIRS_0_translation('IIRS search');
-          // IIRS_0_translation('IIRS view');
+          // IIRS_0_translation(IGNORE_TRANSLATION, 'IIRS documentation'); //manual translation: page title
+          // IIRS_0_translation('IIRS edit');          //manual translation: page title
+          // IIRS_0_translation('IIRS export');        //manual translation: page title
+          // IIRS_0_translation(IGNORE_TRANSLATION, 'IIRS import');        //manual translation: page title
+          // IIRS_0_translation('IIRS list');          //manual translation: page title
+          // IIRS_0_translation('IIRS mapping');       //manual translation: page title
+          // IIRS_0_translation('IIRS registration');  //manual translation: page title
+          // IIRS_0_translation(IGNORE_TRANSLATION, 'IIRS search');        //manual translation: page title
+          // IIRS_0_translation('IIRS view');          //manual translation: page title
           $title   = IIRS_0_translation( "IIRS $widget_folder" );
           $content = self::content( $widget_folder, $page_stem );
           if ( IIRS_is_error( $content ) ) {
@@ -1318,7 +1355,7 @@ class IIRS {
   public static function admin_notices() {
     if ( get_option( IIRS_PLUGIN_NAME . '_show_activation_message' ) ) {
       delete_option( IIRS_PLUGIN_NAME . '_show_activation_message' );
-      print( '<div class="updated"><p>checkout the <a href="/wp-admin/options-general.php?page=iirs-administrator.php">IIRS settings page</a> for contacts, documentation, options and setup</p></div>' );
+      print( '<div class="updated"><p>checkout the <a href="/wp-admin/options-general.php?page=IIRS">IIRS settings page</a> for contacts, documentation, options and setup</p></div>' );
     }
 
     if ( get_option( IIRS_PLUGIN_NAME . '_recommend_plugins' ) ) {
@@ -1337,7 +1374,7 @@ class IIRS {
     if ( get_option( IIRS_PLUGIN_NAME . '_show_activation_version_fail_message' ) ) {
       delete_option( IIRS_PLUGIN_NAME . '_show_activation_version_fail_message' );
       print( '<div class="error"><p><strong>IIRS ' . IIRS_VERSION . ' requires WordPress ' . IIRS__MINIMUM_WP_VERSION . ' or higher.</strong>' );
-      print( 'Please <a href="https:// codex.wordpress.org/Upgrading_WordPress">upgrade WordPress</a> to a current version.</p></div>' );
+      print( 'Please <a href="https://codex.wordpress.org/Upgrading_WordPress">upgrade WordPress</a> to a current version.</p></div>' );
     }
 
     if ( get_option('permalink_structure') == '' ) {
