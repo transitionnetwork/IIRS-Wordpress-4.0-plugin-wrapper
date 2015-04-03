@@ -3,16 +3,14 @@
  * This program is distributed under the terms of the GNU General Public License
  * as detailed in the COPYING file included in the root of this plugin
  */
-?>
 
-<?php
 /**
  * @package IIRS
  */
 /*
 Plugin Name: IIRS
 Plugin URI: http:// transitionnetwork.org/
-Description: IIRS allows you to comunicate with Transition Towns locally and globally
+Description: IIRS allows Transition Initiatives to register themselves on your website
 Version: 1.0.0
 Author: Annesley Newholm
 Author URI: http:// transitionnetwork.org/
@@ -49,7 +47,7 @@ define( 'IIRS_0_USER_ROLE_NAME',    'initiative_facilitator' );
 define( 'IIRS_0_POST_CATEGORY',     'Initiatives' );
 define( 'IIRS_0_CONTENT_TYPE_SLUG', 'initiatives' ); // initiatives/bedford-transition-town
 define( 'IIRS_0_WORDPRESS_ROOT',    WP_CONTENT_DIR . '/..' );
-define( 'IIRS_WP_OPTIONS_ENABLED',  FALSE );
+define( 'IIRS_WP_OPTIONS_ENABLED',  TRUE );
 
 register_activation_hook(   __FILE__, array( IIRS_PLUGIN_NAME, 'plugin_activation' ) );
 register_deactivation_hook( __FILE__, array( IIRS_PLUGIN_NAME, 'plugin_deactivation' ) );

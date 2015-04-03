@@ -3,9 +3,7 @@
  * This program is distributed under the terms of the GNU General Public License
  * as detailed in the COPYING file included in the root of this plugin
  */
-?>
 
-<?php
 // Class definition for the IIRS project
 // conforming to Code Standards in:
 // https:// make.wordpress.org/core/handbook/coding-standards/php/
@@ -18,6 +16,7 @@ add_filter( 'plugin_action_links', array( IIRS_PLUGIN_NAME, 'plugin_action_links
 add_action( 'admin_notices',    array( IIRS_PLUGIN_NAME, 'admin_notices' ) );
 // add_action( 'init',             array( IIRS_PLUGIN_NAME, 'plugins_loaded' ) ); // plugins_loaded didn't work!
 add_filter( 'format_strings',   array( IIRS_PLUGIN_NAME, 'format_strings' ) );
+add_filter( 'plugin_locale',    array( IIRS_PLUGIN_NAME, 'plugin_locale' ) , 10, 2 );
 add_action( 'pre_get_posts',    array( IIRS_PLUGIN_NAME, 'pre_get_posts' ) );
 add_action( 'admin_menu',       array( IIRS_PLUGIN_NAME, 'admin_menu' ) );
 add_action( 'admin_init',       array( IIRS_PLUGIN_NAME, 'admin_init_option_settings' ) );
@@ -47,10 +46,13 @@ class IIRS {
   private static $wp_category_id = NULL;
 
   public static function init() {
+    global $current_user;
+    get_currentuserinfo();
+
     if ( ! self::$initiated ) {
       self::$initiated = true;
 
-      load_plugin_textdomain( IIRS_PLUGIN_NAME, FALSE,  IIRS_PLUGIN_NAME . '/languages/' );
+      load_plugin_textdomain( IIRS_PLUGIN_NAME, TRUE,  IIRS_PLUGIN_NAME . '/languages' );
       // print( get_locale() );exit( 0 ); // = it_IT, en_US etc.
 
       // Model
@@ -65,8 +67,19 @@ class IIRS {
       add_shortcode( 'iirs-edit-link',    array( IIRS_PLUGIN_NAME, 'shortcode_iirs_edit_link' ));
       add_shortcode( 'iirs-view-link',    array( IIRS_PLUGIN_NAME, 'shortcode_iirs_view_link' ));
       wp_register_sidebar_widget( 'iirs-registration', 'Register your Initiative', array( IIRS_PLUGIN_NAME, 'widget_iirs_registration' ));
+
+      if ( $current_user
+        && $current_user->roles
+        && in_array( IIRS_0_USER_ROLE_NAME, $current_user->roles )
+        && ! current_user_can( 'manage_options' )
+        && ( ! defined( 'DOING_AJAX' ) || ! DOING_AJAX )
+      ) {
+        //e.g. suppress the admin bar for initiative managers
+        wp_enqueue_style( 'IIRS_wordpress', plugins_url( 'IIRS/IIRS_wordpress.css' ));
+      }
     }
   }
+
   public static function plugin_action_links($links) {
     $settings_link = '<a href="options-general.php?page=IIRS">Settings</a>';
     array_unshift($links, $settings_link);
@@ -154,6 +167,8 @@ class IIRS {
         case 'language_selector': return false;
         case 'thankyou_for_registering_url': return null;
         case 'region_bias': return null;
+        case 'additional_error_notification_email': return '';
+        case 'registration_notification_email': return '';
         default: return false;
       }
     }
@@ -182,7 +197,7 @@ class IIRS {
 
     $response = ( $post_array ? wp_remote_post( $url, $args ) : wp_remote_get( $url, $args ) );
     if ( is_wp_error( $response ) ) {
-      $body = new IIRS_Error(IIRS_HTTP_FAILED, "Cannot communicate with Transition Registration servers. Sorry! Please try again tomorrow", $response->get_error_message(), IIRS_MESSAGE_EXTERNAL_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION );
+      $body = new IIRS_Error(IIRS_HTTP_FAILED, "Oops, it seems that the our servers are not responding! The manager has been informed and is trying to solve the problem. Please come back here tomorrow :)", $response->get_error_message(), IIRS_MESSAGE_EXTERNAL_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION );
     } else {
       // note that parsing in to the array $response[] is already done
       $response_code = wp_remote_retrieve_response_code( $response ); // $response[response][code]
@@ -191,11 +206,20 @@ class IIRS {
         $body = wp_remote_retrieve_body( $response );          // $response[body]
         // regard empty response as an error
         // because wp_remote_*() do not always report the error correctly it seems
-        if ( $body === '' ) $body = new IIRS_Error(IIRS_HTTP_FAILED,    "Cannot communicate with Transition Registration servers. Sorry! Please try again tomorrow", 'Blank response', IIRS_MESSAGE_EXTERNAL_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION );
+        if ( $body === '' ) $body = new IIRS_Error(IIRS_HTTP_FAILED,    "Oops, it seems that the our servers are not responding! The manager has been informed and is trying to solve the problem. Please come back here tomorrow :)", 'Blank response', IIRS_MESSAGE_EXTERNAL_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION );
       }
     }
 
     return $body;
+  }
+
+  public static function plugin_locale( $locale, $domain ) {
+    $locale_touse = $locale;
+    if ( $domain == IIRS_PLUGIN_NAME ) {
+      $force_locale = IIRS_0_setting( 'lang_code' );
+      if ( ! empty( $force_locale ) ) $locale_touse = $force_locale;
+    }
+    return $locale_touse;
   }
 
   public static function set_message( $mess_no, $message, $message_detail = null, $level = IIRS_MESSAGE_USER_INFORMATION, $user_action = null, $args = null ) {
@@ -372,16 +396,21 @@ class IIRS {
   public static function admin_init_option_settings() {
     // standard IIRS settings
     // http://codex.wordpress.org/Creating_Options_Pages
-    register_setting( IIRS_PLUGIN_NAME, 'offer_buy_domains' );
-    register_setting( IIRS_PLUGIN_NAME, 'add_projects' );
-    register_setting( IIRS_PLUGIN_NAME, 'advanced_settings' );
-    register_setting( IIRS_PLUGIN_NAME, 'image_entry' );
     register_setting( IIRS_PLUGIN_NAME, 'lang_code' );
     register_setting( IIRS_PLUGIN_NAME, 'server_country' );
+    register_setting( IIRS_PLUGIN_NAME, 'region_bias' );
+    register_setting( IIRS_PLUGIN_NAME, 'additional_error_notification_email' );
+    register_setting( IIRS_PLUGIN_NAME, 'registration_notification_email' );
+
     register_setting( IIRS_PLUGIN_NAME, 'override_TI_display' );
     register_setting( IIRS_PLUGIN_NAME, 'override_TI_editing' );
     register_setting( IIRS_PLUGIN_NAME, 'override_TI_content_template' );
     register_setting( IIRS_PLUGIN_NAME, 'language_selector' );
+
+    register_setting( IIRS_PLUGIN_NAME, 'offer_buy_domains' );
+    register_setting( IIRS_PLUGIN_NAME, 'add_projects' );
+    register_setting( IIRS_PLUGIN_NAME, 'advanced_settings' );
+    register_setting( IIRS_PLUGIN_NAME, 'image_entry' );
     register_setting( IIRS_PLUGIN_NAME, 'thankyou_for_registering_url' );
 
     // Wordpress specific settings
@@ -545,7 +574,7 @@ class IIRS {
           'not_found'          => __( 'No initiatives found.' ),
           'not_found_in_trash' => __( 'No initiatives found in Trash.' ),
         ),
-        'description' => 'Transition Town intiative',
+        'description' => 'Transition Initiative',
 
         'public'      => true,
         'publicly_queryable' => true,
@@ -615,9 +644,9 @@ class IIRS {
       $new_user_id = wp_create_user( $name, $pass, $email );
 
       if ( is_wp_error( $new_user_id ) ) {
-        $new_user_id = new IIRS_Error( IIRS_USER_ALREADY_REGISTERED, 'Could not create your user account because of a system error. Please try again tomorrow.', $new_user_id->get_error_message(), IIRS_MESSAGE_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION, array( '$name' => $name, '$email' => $email ) );
+        $new_user_id = new IIRS_Error( IIRS_USER_ALREADY_REGISTERED, 'Oops, Could not create your user account because of a system error. The manager has been informed and is trying to solve the problem. Please try again tomorrow.', $new_user_id->get_error_message(), IIRS_MESSAGE_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION, array( '$name' => $name, '$email' => $email ) );
       } elseif ( ! $new_user_id ) {
-        $new_user_id = new IIRS_Error( IIRS_USER_ALREADY_REGISTERED, 'Could not create your user account because of a system error. Please try again tomorrow.', 'User creation failed, no indication error', IIRS_MESSAGE_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION, array( '$name' => $name, '$email' => $email ) );
+        $new_user_id = new IIRS_Error( IIRS_USER_ALREADY_REGISTERED, 'Oops, Could not create your user account because of a system error. The manager has been informed and is trying to solve the problem. Please try again tomorrow.', 'User creation failed, no indication error', IIRS_MESSAGE_SYSTEM_ERROR, IIRS_MESSAGE_NO_USER_ACTION, array( '$name' => $name, '$email' => $email ) );
       } else {
         // test the login, and actually login immediately
         $wp_user = wp_signon( array(
@@ -914,6 +943,10 @@ class IIRS {
         'native_ID' => $post->ID,
         'name'      => $post->post_title,
         'summary'   => $post->post_content,
+        //TODO: will eventually include category knowledge here also
+        //  categories: TI, project, person wants to start, etc.
+        //  AND then the custom marker can also then change it
+        'custom_marker'         => (isset($post_meta['custom_marker']) ? $post_meta['custom_marker'][0] : ''),
 
         //meta fields have the same name, but in an array(value)
         'domain'                => (isset($post_meta['domain']) ? $post_meta['domain'][0] : ''),
@@ -1347,6 +1380,10 @@ class IIRS {
 
     // TODO: admin notice if wp-settings does not contain wp_magic_quotes()
     // if ( strstr( file_get_contents( ABSPATH . 'wp-settings.php' ), 'wp_magic_quotes()' )  === FALSE )
+
+    // default option settings
+    add_option( 'override_ti_editing', '1' );
+    add_option( 'override_ti_content_template', '1' );
 
     // recommended plugins
     add_option( IIRS_PLUGIN_NAME . '_recommend_plugins', true );

@@ -3,12 +3,13 @@
  * This program is distributed under the terms of the GNU General Public License
  * as detailed in the COPYING file included in the root of this plugin
  */
-?>
 
-<?php
 // http://codex.wordpress.org/Creating_Options_Pages
 
 wp_enqueue_style( 'IIRS_general', plugins_url( 'IIRS/IIRS_common/general.css' ) );
+
+global $IIRS_host_TLD;
+require_once( IIRS__COMMON_DIR . 'iso-3166-country.php' );
 
 // -------------------------------------------------- partner plugin detection
 $WPML_main_active     = IIRS::plugin_active( 'sitepress-multilingual-cms/sitepress.php' );
@@ -37,12 +38,14 @@ if ( $theme_custom_content_template = locate_template( array( 'content-' . IIRS_
 <div class="wrap">
   <style>
     body .form-table {
-      width:300px;
+      max-width:200px;
+      margin-right:50px;
       clear:none;
       float:left;
     }
     body .form-table th {
       font-weight:normal;
+      padding:5px 0px;
     }
     body .form-table label {
       white-space:nowrap;
@@ -53,6 +56,16 @@ if ( $theme_custom_content_template = locate_template( array( 'content-' . IIRS_
     }
     #iirs-settings-form img {
       float:right;
+    }
+    #iirs-settings-form .options-select {
+      width:180px;
+    }
+    #iirs-settings-form .help {
+      color:#666666;
+      font-size:12px;
+    }
+    #iirs-settings-form .help:hover {
+      font-weight:normal;
     }
   </style>
 
@@ -88,15 +101,20 @@ if ( $theme_custom_content_template = locate_template( array( 'content-' . IIRS_
     <h3>integration with other plugins</h3>
     <p>
       IIRS uses, and has free organisation licenses for other plugins.
-      Please send an email to <?php print( IIRS_EMAIL_TEAM_LINK ); ?> for other Plugin recommendations!
+      Please send an email to <?php print( IIRS_EMAIL_TEAM_LINK ); ?> with your other Plugin recommendations!
+      Did you know: Wordpress can do <a href="/wp-admin/plugin-install.php">one-click plugin installation</a>? You will need your <b>FTP details</b> the first time.
+      Email <?php print( IIRS_EMAIL_TEAM_LINK ); ?> if you need help with this of course! :)
     </p>
     <ul>
-      <li><a taget="_blank" href="http://wpml.org/">WPML (WordPress MultiLingual)</a>: we have a free license and you can translate this plugin with it.</li>
-      <li><a taget="_blank" href="http://akismet.com/">A.kis.met (anti-spam)</a>: IIRS has it's own implementation of this plugin and checks all registrations against the Akismet service for you.</li>
+      <li><a target="_blank" href="http://wpml.org/">WPML (WordPress MultiLingual)</a>: we have a free license and you can translate this plugin with it.</li>
+      <li><a target="_blank" href="/wp-admin/plugin-install.php?tab=plugin-information&plugin=akismet">A.kis.met (anti-spam)</a>: IIRS has it's own implementation of this plugin and checks all registrations against the Akismet service for you.</li>
+      <li>Transition Network has also developed a free <b>Login plugin</b> which enables an easy Login popup for your users to use.</li>
+      <li>we also recommend <b>regular backups</b> using <a target="_blank" href="/wp-admin/plugin-install.php?tab=plugin-information&plugin=updraftplus">UpdraftPlus Backup and Restoration</a></li>
       <li>We are intending to integrate with Location plugins soon. Please email <?php print( IIRS_EMAIL_TEAM_LINK ); ?> with your recommendations.</li>
     </ul>
 
-    <h3>shortcodes</h3>
+    <h3>putting the IIRS on your website: Wordpress "shortcodes" and "widgets"</h3>
+    <p>This IIRS plugin provides a registration "widget" called "Register your Initiative". Go to your <a href="/wp-admin/widgets.php">Apperance Widget editor</a> to place it in one of your sidebars.</p>
     <p>The following <a href="http://codex.wordpress.org/Shortcode" target="_blank">shortcodes</a> can be used from the IIRS plugin:</p>
     <ul>
       <li><strong>[iirs-registration]</strong> show the registration widget town entry</li>
@@ -130,49 +148,78 @@ if ( $theme_custom_content_template = locate_template( array( 'content-' . IIRS_
       </p>
     <?php } ?>
 
-    <div class="IIRS_0_hidden">
-      <h3>options <i>(currently disabled)</i></h3>
+    <div>
+      <h3>options</h3>
+      <a name="IIRS_0_options_area" />
       <table id="form-table-localisation" class="form-table">
         <tr valign="top">
-          <th scope="row"><label for="lang_code">language code</label></th>
-          <td><select name="lang_code" id="lang_code" <?php if ( IIRS_0_setting('lang_code') ) print( 'checked="1"' ); ?> /></td>
+          <th scope="row"><label for="additional_error_notification_email">error notification<br/>email address</label><br/><span class="help">administrator's email</span></th>
+          <td><input name="additional_error_notification_email" id="additional_error_notification_email" value="<?php print( esc_attr( IIRS_0_setting('additional_error_notification_email') ) ); ?>" /></td>
         </tr>
         <tr valign="top">
-          <th scope="row"><label for="server_country">server country</label></th>
-          <td><select name="server_country" id="server_country" <?php if ( IIRS_0_setting('server_country') ) print( 'checked="1"' ); ?> /></td>
+          <th scope="row"><label for="registration_notification_email">registration<br/>notification email<br/>address</label><br/><span class="help">a copy of the new user email</span></th>
+          <td><input name="registration_notification_email" id="registration_notification_email" value="<?php print( esc_attr( IIRS_0_setting('registration_notification_email') ) ); ?>" /></td>
         </tr>
         <tr valign="top">
-          <th scope="row"><label for="server_country">region bias</label></th>
-          <td><select name="region_bias" id="region_bias" <?php if ( IIRS_0_setting('region_bias') ) print( 'checked="1"' ); ?> /></td>
+          <th scope="row"><label for="lang_code">plugin<br/>language code</label></th>
+          <td><select class="options-select" name="lang_code" id="lang_code">
+            <option value="">default administration suite setting (<?php print(IIRS_0_locale()); ?>)</option>
+            <?php
+              $available_languages = IIRS_0_available_languages();
+              $current_lang_code   = IIRS_0_setting('lang_code');
+              foreach ( $available_languages as $lang_code ) {
+                $selected = '';
+                if ( $lang_code == $current_lang_code ) $selected = 'selected="1"';
+                print( "<option $selected value=\"$lang_code\">$lang_code</option>" );
+              }
+            ?>
+          </select></td>
         </tr>
         <tr valign="top">
-          <td><input disabled="1" type="checkbox" name="language_selector" id="language_selector" value="1" <?php if ( IIRS_0_setting('language_selector') ) print( 'checked="1"' ); ?> /></td>
-          <th scope="row"><label class="IIRS_0_disabled" for="language_selector">show language selector</label></th>
+          <th scope="row"><label for="server_country">location search<br/>region bias<br/><span class="help">default's to [<?php print( $IIRS_host_TLD ); ?>]</span></label></th>
+          <td><select class="options-select" name="region_bias" id="region_bias">
+            <option value="">use TLD [<?php print( $IIRS_host_TLD ); ?>]</option>
+            <?php
+              $current_ISO_3166_code = IIRS_0_setting('region_bias');
+              foreach ( $iso_3166_country as $ISO_3166_code => $country ) {
+                $selected = '';
+                if ( $ISO_3166_code == $current_ISO_3166_code ) $selected = 'selected="1"';
+                print( "<option $selected value=\"$ISO_3166_code\">$country ($ISO_3166_code)</option>" );
+              }
+            ?>
+          </select></td>
         </tr>
       </table>
 
       <table id="form-table-display-overide" class="form-table">
         <tr valign="top">
           <td><input type="checkbox" name="override_TI_display" id="override_TI_display" value="1" <?php if ( IIRS_0_setting('override_TI_display') ) print( 'checked="1"' ); ?> /></td>
-          <th scope="row"><label for="override_TI_display">override Initiative display</label></th>
+          <th scope="row"><label for="override_TI_display">override Initiative display</label><br/><span class="help">use the IIRS to display the full profile view page</span></th>
         </tr>
         <tr valign="top">
           <td><input type="checkbox" name="override_TI_editing" id="override_TI_editing" value="1" <?php if ( IIRS_0_setting('override_TI_editing') ) print( 'checked="1"' ); ?> /></td>
-          <th scope="row"><label for="override_TI_editing">override Initiative editing</label></th>
+          <th scope="row"><label for="override_TI_editing">override Initiative editing</label><br/><span class="help">use the IIRS Initiative editor and prevent user access to the Wordpress administration suite</span></th>
         </tr>
         <tr valign="top">
           <td><input type="checkbox" name="override_TI_content_template" id="override_TI_content_template" value="1" <?php if ( IIRS_0_setting('override_TI_content_template') ) print( 'checked="1"' ); ?> /></td>
-          <th scope="row"><label for="override_TI_content_template">override Initiative content display</label></th>
+          <th scope="row"><label for="override_TI_content_template">override Initiative content<br/>display</label><br/><span class="help">use the IIRS to display the TI profiles</span></th>
         </tr>
-
         <tr valign="top">
           <td><input type="checkbox" name="initiatives_visibility" id="initiatives_visibility" value="1" <?php if ( IIRS_0_setting('initiatives_visibility') ) print( 'checked="1"' ); ?> /></td>
-          <th scope="row"><label for="initiatives_visibility">initiatives visibility</label></th>
+          <th scope="row"><label for="initiatives_visibility">initiatives visibility</label><br/><span class="help">show TI registrations in the normal post lists on the homepage</span></th>
         </tr>
+        <!-- tr valign="top">
+          <td><input disabled="1" type="checkbox" name="language_selector" id="language_selector" value="1" <?php if ( IIRS_0_setting('language_selector') ) print( 'checked="1"' ); ?> /></td>
+          <th scope="row"><label class="IIRS_0_disabled" for="language_selector">show language selector</label></th>
+        </tr -->
       </table>
 
       <table id="form-table-registration-components" class="form-table">
         <tr valign="top">
+          <th scope="row"><label for="thankyou_for_registering_url">thankyou for registering<br/>web address</label><br/><span class="help">redirect at the end of the registration e.g. /post/69</span></th>
+          <td><input name="thankyou_for_registering_url" id="thankyou_for_registering_url" value="<?php print( esc_attr( IIRS_0_setting('thankyou_for_registering_url') ) ); ?>" /></td>
+        </tr>
+        <!-- tr valign="top">
           <td><input disabled="1" type="checkbox" name="offer_buy_domains" id="offer_buy_domains" value="1" <?php if ( IIRS_0_setting('offer_buy_domains') ) print( 'checked="1"' ); ?> /></td>
           <th scope="row"><label class="IIRS_0_disabled" for="offer_buy_domains">offer to buy domain</label></th>
         </tr>
@@ -187,12 +234,9 @@ if ( $theme_custom_content_template = locate_template( array( 'content-' . IIRS_
         <tr valign="top">
           <td><input disabled="1" type="checkbox" name="image_entry" id="image_entry" value="1" <?php if ( IIRS_0_setting('image_entry') ) print( 'checked="1"' ); ?> /></td>
           <th scope="row"><label class="IIRS_0_disabled" for="image_entry">image entry</label></th>
-        </tr>
-        <tr valign="top">
-          <th scope="row"><label for="thankyou_for_registering_url">thankyou for registering url</label></th>
-          <td><input name="thankyou_for_registering_url" id="thankyou_for_registering_url" value="<?php print( esc_attr( IIRS_0_setting('thankyou_for_registering_url') ) ); ?>" /></td>
-        </tr>
+        </tr -->
       </table>
+      <?php do_settings_sections(IIRS_PLUGIN_NAME); ?>
       <br class="clear" />
 
       <?php submit_button(); ?>
