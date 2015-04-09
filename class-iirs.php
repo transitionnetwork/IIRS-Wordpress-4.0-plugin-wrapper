@@ -1129,12 +1129,12 @@ class IIRS {
         // provide some easy links to access the users TI
         // host framework links for viewing and editing
         // the widget will always use the IIRS/* versions of course
-        elseif ( 'view' == $widget_folder && false == IIRS_0_setting( 'override_TI_display' ) ) {
+        elseif ( 'view' == $widget_folder && ! IIRS_0_setting( 'override_TI_display' ) ) {
           // we are not overriding the TI display
           // so redirect to the host framework display
           wp_redirect( IIRS_0_URL_view_TI( self::input( 'ID' ) ) );
         }
-        elseif ( 'edit' == $widget_folder && false == IIRS_0_setting( 'override_TI_editing' ) ) {
+        elseif ( 'edit' == $widget_folder && ! IIRS_0_setting( 'override_TI_editing' ) ) {
           // we are not overriding the TI editing
           // so redirect to the host framework editing
           wp_redirect( IIRS_0_URL_edit_TI( self::input( 'ID' ) ) );
@@ -1250,7 +1250,7 @@ class IIRS {
     if ( $post && IIRS_0_CONTENT_TYPE == $post->post_type ) {
       // check for a custom content-initiative_profile.php in the theme
       $theme_custom_content_template = locate_template( array( 'content-' . IIRS_0_CONTENT_TYPE . '.php' ) );
-      if (  ! $theme_custom_content_template && true === IIRS_0_setting( 'override_TI_content_template' ) ) {
+      if (  ! $theme_custom_content_template && IIRS_0_setting( 'override_TI_content_template' ) ) {
         // ok, no custom content templates, so let us do our own stuff
         // so we must manually include css and javascript that we want
         wp_enqueue_style(  'IIRS_general', plugins_url( 'IIRS/IIRS_common/general.css' ));
